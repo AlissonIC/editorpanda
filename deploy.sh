@@ -61,6 +61,12 @@ fi
 if [[ $NO_BUILD -eq 0 ]]; then
     step "npm install + build"
     npm install --no-audit --no-fund
+    # Em alguns servidores os shims em node_modules/.bin perdem o bit +x
+    # (rsync de Windows, umask restritivo, npm rodado como root sem --unsafe-perm).
+    # Sem isso, "vite build" falha com "Permission denied".
+    if [[ -d node_modules/.bin ]]; then
+        chmod -R u+x node_modules/.bin || true
+    fi
     npm run build
 fi
 
@@ -75,21 +81,42 @@ if [[ ! -e public/storage ]]; then
 fi
 
 # ---- 7. Caches ----
+# Sempre limpa antes de regenerar — evita cache "zumbi" referenciando classes
+# que foram removidas/renomeadas no commit atual.
+step "Limpando caches antes de regenerar"
+php artisan optimize:clear
+rm -f bootstrap/cache/routes-v7.php bootstrap/cache/services.php bootstrap/cache/packages.php
+
 if [[ $PROD -eq 1 ]]; then
     step "Caches de produção"
     php artisan config:cache
     php artisan route:cache
     php artisan view:cache
     php artisan event:cache
-else
-    step "Limpando caches (dev)"
-    php artisan config:clear
-    php artisan route:clear
-    php artisan view:clear
+fi
+
+# Recarrega o PHP-FPM para invalidar o opcache (senão o FPM segura o bootstrap antigo).
+if [[ $PROD -eq 1 ]]; then
+    for svc in php8.3-fpm php8.2-fpm php-fpm; do
+        if systemctl is-active --quiet "$svc" 2>/dev/null; then
+            step "Recarregando $svc"
+            sudo systemctl reload "$svc" || warn "Falha ao recarregar $svc (rode manualmente)."
+            break
+        fi
+    done
 fi
 
 # ---- 8. Reinicia queue worker ----
 step "php artisan queue:restart"
 php artisan queue:restart
+
+# ---- 9. Permissões para o webserver (Apache/Nginx) ----
+# Sem isso, Laravel dá 500 ao tentar escrever em storage/logs e bootstrap/cache.
+if [[ $PROD -eq 1 ]] && command -v chown >/dev/null 2>&1; then
+    WEBUSER=${WEBUSER:-www-data}
+    step "Ajustando permissões para $WEBUSER em storage/ e bootstrap/cache"
+    chown -R "$WEBUSER":"$WEBUSER" storage bootstrap/cache 2>/dev/null || true
+    chmod -R ug+rwX storage bootstrap/cache || true
+fi
 
 ok "OK — projeto atualizado."
