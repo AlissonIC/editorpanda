@@ -1,0 +1,63 @@
+# ===== Laravel =====
+/vendor
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/storage/debugbar
+/bootstrap/cache/*.php
+!/bootstrap/cache/.gitignore
+
+# ===== Env & secrets =====
+.env
+.env.backup
+.env.production
+.env.*.local
+auth.json
+
+# ===== Logs & caches =====
+*.log
+.phpunit.result.cache
+/.phpunit.cache
+/.phpactor.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== IDE / editor =====
+/.idea
+/.vscode
+/.fleet
+/.nova
+/.zed
+*.swp
+*.swo
+.phpactor.json
+
+# ===== SO =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Agentes locais (não versionar contexto/sessões) =====
+/.claude
+/.cursor
+/.windsurf
+
+# ===== Homestead =====
+Homestead.json
+Homestead.yaml
+
+# ===== Uploads / mídias do projeto =====
+# Vídeos originais e processados ficam em storage/app/private — já ignorados,
+# mas reforçamos aqui caso alguém crie symlinks em public/
+/public/videos
+/public/uploads
+*.mp4
+*.mov
+*.mkv
+*.webm
+!resources/**/*.mp4
+!resources/**/*.mov
