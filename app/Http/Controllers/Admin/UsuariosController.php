@@ -14,7 +14,7 @@ class UsuariosController extends Controller
 {
     public function index(): View
     {
-        return view('pages.admin.usuarios');
+        return view('pages.painel.usuarios');
     }
 
     public function data(Request $request): JsonResponse

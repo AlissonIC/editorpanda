@@ -18,7 +18,7 @@ class FinanceiroController extends Controller
         $totalSaquesPagos = (float) Saque::where('status', 'pago')->sum('valor');
         $totalSaquesPendentes = (float) Saque::where('status', 'solicitado')->sum('valor');
 
-        return view('pages.admin.financeiro', compact('totalPago', 'totalSaquesPagos', 'totalSaquesPendentes'));
+        return view('pages.painel.financeiro', compact('totalPago', 'totalSaquesPagos', 'totalSaquesPendentes'));
     }
 
     public function vendasData(Request $request): JsonResponse

@@ -1,6 +1,10 @@
+import { bindPhone } from '../../lib/masks';
+
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('lead-form');
     if (!form) return;
+
+    bindPhone(form.querySelector('input[name="whatsapp"]'));
 
     const submitBtn = form.querySelector('button[type=submit]');
     const label = submitBtn.querySelector('.label');

@@ -15,7 +15,7 @@ class LeadsController extends Controller
     {
         $total = Lead::count();
 
-        return view('pages.admin.leads', compact('total'));
+        return view('pages.painel.leads', compact('total'));
     }
 
     public function data(Request $request): JsonResponse

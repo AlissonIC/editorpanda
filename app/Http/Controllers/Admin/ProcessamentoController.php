@@ -21,7 +21,7 @@ class ProcessamentoController extends Controller
             'falhou' => Video::where('status', Video::STATUS_FALHOU)->count(),
         ];
 
-        return view('pages.admin.processamento', compact('contadores'));
+        return view('pages.painel.processamento', compact('contadores'));
     }
 
     public function data(Request $request): JsonResponse

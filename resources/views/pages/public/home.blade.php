@@ -45,9 +45,6 @@
                                 <span class="label">Quero ser avisado</span>
                                 <span class="spinner-border spinner-border-sm ms-2 d-none" role="status"></span>
                             </button>
-                            <p class="small text-muted text-center mt-3 mb-0">
-                                Já tem conta? <a href="{{ route('login') }}" class="text-dark">Entrar</a>
-                            </p>
                         </form>
                     </div>
                 </div>
