@@ -61,11 +61,16 @@ fi
 if [[ $NO_BUILD -eq 0 ]]; then
     step "npm install + build"
     npm install --no-audit --no-fund
-    # Em alguns servidores os shims em node_modules/.bin perdem o bit +x
-    # (rsync de Windows, umask restritivo, npm rodado como root sem --unsafe-perm).
-    # Sem isso, "vite build" falha com "Permission denied".
+    # node_modules/.bin/* são symlinks — chmod neles não muda o alvo real.
+    # Sem +x nos alvos, "vite build" falha com "Permission denied" quando o
+    # npm não preservou o bit (tarball extraído com umask restritivo, rsync
+    # de Windows, npm como root sem --unsafe-perm).
     if [[ -d node_modules/.bin ]]; then
-        chmod -R u+x node_modules/.bin || true
+        for link in node_modules/.bin/*; do
+            [[ -L "$link" ]] || continue
+            target=$(readlink -f "$link")
+            [[ -f "$target" ]] && chmod +x "$target"
+        done
     fi
     npm run build
 fi
