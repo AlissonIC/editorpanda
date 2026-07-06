@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { bindMoney } from './masks';
 
 export function bindCrudModal(opts) {
     const {
@@ -16,6 +17,9 @@ export function bindCrudModal(opts) {
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     const titleEl = modalEl.querySelector('.modal-title');
 
+    // Auto-bind: máscaras de dinheiro (BRL) em qualquer input com data-mask="money"
+    form.querySelectorAll('input[data-mask="money"]').forEach(bindMoney);
+
     function clearErrors() {
         form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
         form.querySelectorAll('.invalid-feedback[data-field]').forEach(el => el.textContent = '');
@@ -32,7 +36,15 @@ export function bindCrudModal(opts) {
         Object.entries(data).forEach(([k, v]) => {
             const input = form.querySelector(`[name="${k}"]`);
             if (!input) return;
+            if (input.type === 'checkbox') {
+                input.checked = v === true || v === 1 || v === '1' || v === 'true';
+                return;
+            }
             input.value = v ?? '';
+            // Reaplica máscara para inputs com data-mask="*" quando o valor vem do backend
+            if (input.dataset.maskBound) {
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         });
     }
 
@@ -50,6 +62,8 @@ export function bindCrudModal(opts) {
                 resetForm();
                 form.querySelector('input[name="id"]').value = id;
                 fillForm(data);
+                // Notifica listeners específicos da página (ex.: eventos.js sincroniza preview do logo)
+                form.dispatchEvent(new CustomEvent('crud:filled', { detail: { id, data } }));
                 if (titleEdit) titleEl.textContent = titleEdit;
                 modal.show();
             } catch { window.showToast('Erro ao carregar registro.', 'error'); }
@@ -73,6 +87,12 @@ export function bindCrudModal(opts) {
         clearErrors();
         const id = form.querySelector('input[name="id"]').value;
         const data = Object.fromEntries(new FormData(form));
+        form.querySelectorAll('input[type="checkbox"][name]').forEach((cb) => {
+            data[cb.name] = cb.checked ? 1 : 0;
+        });
+        form.querySelectorAll('input[data-mask="money"][name]').forEach((el) => {
+            data[el.name] = el.dataset.rawValue ?? '0.00';
+        });
         const isEdit = !!id;
 
         try {
@@ -87,14 +107,23 @@ export function bindCrudModal(opts) {
         } catch (err) {
             if (err.response?.status === 422) {
                 const errors = err.response.data.errors || {};
+                let shownInline = 0;
                 Object.entries(errors).forEach(([field, msgs]) => {
                     const input = form.querySelector(`[name="${field}"]`);
                     const fb = form.querySelector(`[data-field="${field}"]`);
                     if (input) input.classList.add('is-invalid');
-                    if (fb) fb.textContent = msgs[0];
+                    if (fb) { fb.textContent = msgs[0]; shownInline++; }
                 });
+                if (shownInline === 0) {
+                    const first = Object.values(errors)[0]?.[0] || err.response.data.message || 'Dados inválidos.';
+                    window.showToast(first, 'error');
+                }
             } else {
-                window.showToast('Erro ao salvar.', 'error');
+                const msg = err.response?.data?.message
+                    || (err.response?.status ? `Erro ${err.response.status}` : 'Erro de conexão')
+                    + ' ao salvar.';
+                window.showToast(msg, 'error');
+                console.error('[crud-modal] submit falhou:', err);
             }
         }
     });

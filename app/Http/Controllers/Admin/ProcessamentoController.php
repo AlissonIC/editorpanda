@@ -30,6 +30,11 @@ class ProcessamentoController extends Controller
             ->with(['album:id,nome', 'user:id,nome'])
             ->select(['id', 'album_id', 'user_id', 'nome', 'status', 'erro_msg', 'tamanho_bytes', 'created_at', 'processado_em']);
 
+        $filters = $request->input('filters', []);
+        if (! empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
         return DataTables::eloquent($query)
             ->addColumn('album', fn ($v) => $v->album?->nome ?? '—')
             ->addColumn('cliente', fn ($v) => $v->user?->nome ?? '—')

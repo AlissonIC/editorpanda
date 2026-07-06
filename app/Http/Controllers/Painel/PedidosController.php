@@ -26,6 +26,11 @@ class PedidosController extends Controller
             $query->where('user_id', auth()->id());
         }
 
+        $filters = $request->input('filters', []);
+        if (! empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
         return DataTables::eloquent($query)
             ->addColumn('album', fn ($p) => $p->album?->nome ?? '—')
             ->addColumn('cliente', fn ($p) => $p->user?->nome ?? '—')

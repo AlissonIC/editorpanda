@@ -18,7 +18,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     makeDataTable('#tbl-pedidos', {
         ajax: '/painel/pedidos/data',
-        order: [[columns.length - 1, 'desc']],
         columns,
+        filters: {
+            search: { placeholder: 'Buscar por pedido ou comprador…' },
+            selects: [
+                {
+                    name: 'status',
+                    label: 'Status',
+                    width: 180,
+                    options: [
+                        { value: '', label: 'Todos' },
+                        { value: 'pendente', label: 'Pendente' },
+                        { value: 'pago', label: 'Pago' },
+                        { value: 'cancelado', label: 'Cancelado' },
+                        { value: 'falhou', label: 'Falhou' },
+                    ],
+                },
+            ],
+        },
     });
 });

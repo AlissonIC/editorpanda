@@ -42,6 +42,11 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        // Guard para clientes finais (compradores de vídeos) — login via magic link
+        'comprador' => [
+            'driver' => 'session',
+            'provider' => 'compradores',
+        ],
     ],
 
     /*
@@ -65,6 +70,10 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+        'compradores' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Comprador::class,
         ],
 
         // 'users' => [

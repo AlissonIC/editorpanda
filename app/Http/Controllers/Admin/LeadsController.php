@@ -22,6 +22,11 @@ class LeadsController extends Controller
     {
         $query = Lead::query()->select(['id', 'email', 'whatsapp', 'origem', 'ip', 'created_at']);
 
+        $filters = $request->input('filters', []);
+        if (! empty($filters['origem'])) {
+            $query->where('origem', $filters['origem']);
+        }
+
         return DataTables::eloquent($query)
             ->editColumn('email', fn ($l) => $l->email ?: '—')
             ->editColumn('whatsapp', fn ($l) => $l->whatsapp ?: '—')

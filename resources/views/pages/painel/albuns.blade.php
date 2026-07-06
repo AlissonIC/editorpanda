@@ -71,11 +71,23 @@
                     <textarea name="descricao" class="form-control" rows="2"></textarea>
                 </div>
                 <div class="row g-3">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label small">Preço (R$)</label>
-                        <input type="number" name="preco" step="0.01" min="0" value="0.00" class="form-control" required>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label small">Preço fixo do álbum</label>
+                        <input type="text" name="preco" data-mask="money" value="0.00" class="form-control" required>
+                        <small class="text-muted">Para pacotes; opcional.</small>
                     </div>
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label small">Preço por vídeo</label>
+                        <input type="text" name="preco_por_video" data-mask="money" class="form-control mb-1" id="album-preco-video">
+                        <div class="form-check form-check-sm">
+                            <input class="form-check-input" type="checkbox" name="herdar_preco_evento" value="1" id="album-herdar-preco">
+                            <label class="form-check-label small text-muted" for="album-herdar-preco">
+                                Usar preço do evento (<span id="album-preco-evento-preview">R$ 0,00</span>)
+                            </label>
+                        </div>
+                        <div class="invalid-feedback" data-field="preco_por_video"></div>
+                    </div>
+                    <div class="col-md-4 mb-3">
                         <label class="form-label small">Status</label>
                         <select name="status" class="form-select">
                             <option value="rascunho">Rascunho</option>
@@ -92,33 +104,10 @@
     </div>
 </div>
 
-<div class="modal fade" id="modalUpload" tabindex="-1">
-    <div class="modal-dialog">
-        <form id="form-upload" class="modal-content" enctype="multipart/form-data">
-            @csrf
-            <input type="hidden" name="album_id">
-            <div class="modal-header">
-                <h5 class="modal-title">Enviar vídeo</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="small text-muted">Formatos: MP4, MOV, MKV, WEBM. Tamanho máx: 500MB.</p>
-                <input type="file" name="arquivo" accept="video/*" class="form-control" required>
-                <div class="invalid-feedback d-block small mt-2" data-field="arquivo"></div>
-                <div class="progress mt-3 d-none" style="height: 8px;">
-                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" class="btn btn-dark-panda">Enviar para processamento</button>
-            </div>
-        </form>
-    </div>
-</div>
 @endunless
 @endsection
 
 @push('scripts')
+    <script>window.pandaEventos = @json($eventos ?? []);</script>
     @vite('resources/js/pages/painel/albuns.js')
 @endpush

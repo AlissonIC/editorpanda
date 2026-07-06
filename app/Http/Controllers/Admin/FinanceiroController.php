@@ -26,6 +26,11 @@ class FinanceiroController extends Controller
         $query = Pedido::query()->with(['album:id,nome', 'user:id,nome'])
             ->select(['id', 'album_id', 'user_id', 'comprador_email', 'total', 'status', 'created_at']);
 
+        $filters = $request->input('filters', []);
+        if (! empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
         return DataTables::eloquent($query)
             ->addColumn('album', fn ($p) => $p->album?->nome ?? '—')
             ->addColumn('cliente', fn ($p) => $p->user?->nome ?? '—')
@@ -40,6 +45,11 @@ class FinanceiroController extends Controller
     {
         $query = Saque::query()->with('user:id,nome')
             ->select(['id', 'user_id', 'valor', 'status', 'solicitado_em', 'pago_em']);
+
+        $filters = $request->input('filters', []);
+        if (! empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
 
         return DataTables::eloquent($query)
             ->addColumn('cliente', fn ($s) => $s->user?->nome ?? '—')

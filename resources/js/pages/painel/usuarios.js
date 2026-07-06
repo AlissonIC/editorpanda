@@ -4,7 +4,6 @@ import { bindCrudModal } from '../../lib/crud-modal';
 document.addEventListener('DOMContentLoaded', () => {
     makeDataTable('#tbl-usuarios', {
         ajax: '/painel/usuarios/data',
-        order: [[5, 'desc']],
         columns: [
             { data: 'nome' },
             { data: 'email' },
@@ -12,8 +11,23 @@ document.addEventListener('DOMContentLoaded', () => {
             { data: 'role' },
             { data: 'saldo_disponivel' },
             { data: 'created_at' },
-            { data: 'acoes', orderable: false, searchable: false, className: 'text-end' },
+            { data: 'acoes', searchable: false, className: 'text-end' },
         ],
+        filters: {
+            search: { placeholder: 'Buscar por nome ou e-mail…' },
+            selects: [
+                {
+                    name: 'role',
+                    label: 'Perfil',
+                    width: 170,
+                    options: [
+                        { value: '', label: 'Todos' },
+                        { value: 'admin', label: 'Admins' },
+                        { value: 'cliente', label: 'Clientes' },
+                    ],
+                },
+            ],
+        },
     });
 
     bindCrudModal({

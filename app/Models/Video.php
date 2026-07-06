@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class Video extends Model
 {
+    public const STATUS_ENVIANDO = 'enviando';
     public const STATUS_PENDENTE = 'pendente';
     public const STATUS_PROCESSANDO = 'processando';
     public const STATUS_CONCLUIDO = 'concluido';
@@ -19,6 +22,12 @@ class Video extends Model
         'arquivo_original_path',
         'arquivo_processado_path',
         'thumbnail_path',
+        'disk',
+        'upload_id',
+        'parts_json',
+        'chunk_size',
+        'total_parts',
+        'upload_iniciado_em',
         'status',
         'erro_msg',
         'tamanho_bytes',
@@ -30,7 +39,11 @@ class Video extends Model
     {
         return [
             'processado_em' => 'datetime',
+            'upload_iniciado_em' => 'datetime',
+            'parts_json' => 'array',
             'tamanho_bytes' => 'integer',
+            'chunk_size' => 'integer',
+            'total_parts' => 'integer',
             'duracao_segundos' => 'integer',
         ];
     }
@@ -43,5 +56,55 @@ class Video extends Model
     public function album(): BelongsTo
     {
         return $this->belongsTo(Album::class);
+    }
+
+    public function getUrlAttribute(): ?string
+    {
+        $path = $this->arquivo_processado_path ?: $this->arquivo_original_path;
+        if (! $path) {
+            return null;
+        }
+        $disk = $this->disk ?: 'local';
+        // Local: nunca expor URL direta (path privado). Consumidor deve rotear
+        // por endpoint autenticado como fazemos com serveThumbnail.
+        if ($disk !== 's3') {
+            return null;
+        }
+        try {
+            return Storage::disk('s3')->temporaryUrl($path, now()->addMinutes(15));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (Video $video) {
+            $disco = $video->disk ?: 'local';
+
+            // Remove todos os arquivos associados COM verificação redundante:
+            // se qualquer um falhar em sumir, é registrado em arquivos_orfaos
+            // para retry pelo comando `panda:limpar-orfaos`.
+            foreach (array_filter([
+                $video->arquivo_original_path,
+                $video->arquivo_processado_path,
+                $video->thumbnail_path,
+            ]) as $path) {
+                \App\Support\StorageCleanup::deleteAndVerify($disco, $path, 'video_delete');
+            }
+
+            // Sempre desconta — bytes são reservados no init do upload, então
+            // apagar em qualquer status (enviando, pendente, processando, concluído)
+            // libera a cota.
+            if ($video->tamanho_bytes > 0) {
+                DB::table('users')
+                    ->where('id', $video->user_id)
+                    ->update([
+                        'armazenamento_bytes' => DB::raw(
+                            'GREATEST(CAST(armazenamento_bytes AS SIGNED) - ' . (int) $video->tamanho_bytes . ', 0)'
+                        ),
+                    ]);
+            }
+        });
     }
 }

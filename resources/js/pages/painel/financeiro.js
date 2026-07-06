@@ -4,7 +4,6 @@ import axios from 'axios';
 document.addEventListener('DOMContentLoaded', () => {
     makeDataTable('#tbl-vendas', {
         ajax: '/painel/financeiro/vendas/data',
-        order: [[6, 'desc']],
         columns: [
             { data: 'id' },
             { data: 'album' },
@@ -14,19 +13,52 @@ document.addEventListener('DOMContentLoaded', () => {
             { data: 'status' },
             { data: 'created_at' },
         ],
+        filters: {
+            search: { placeholder: 'Buscar por álbum, cliente ou comprador…' },
+            selects: [
+                {
+                    name: 'status',
+                    label: 'Status',
+                    width: 180,
+                    options: [
+                        { value: '', label: 'Todos' },
+                        { value: 'pago', label: 'Pago' },
+                        { value: 'pendente', label: 'Pendente' },
+                        { value: 'cancelado', label: 'Cancelado' },
+                        { value: 'falhou', label: 'Falhou' },
+                    ],
+                },
+            ],
+        },
     });
 
     const tblSaques = makeDataTable('#tbl-saques', {
         ajax: '/painel/financeiro/saques/data',
-        order: [[4, 'desc']],
         columns: [
             { data: 'id' },
             { data: 'cliente' },
             { data: 'valor' },
             { data: 'status' },
             { data: 'solicitado_em' },
-            { data: 'acoes', orderable: false, searchable: false, className: 'text-end' },
+            { data: 'acoes', searchable: false, className: 'text-end' },
         ],
+        filters: {
+            search: { placeholder: 'Buscar cliente…' },
+            selects: [
+                {
+                    name: 'status',
+                    label: 'Status',
+                    width: 180,
+                    options: [
+                        { value: '', label: 'Todos' },
+                        { value: 'solicitado', label: 'Solicitado' },
+                        { value: 'processando', label: 'Processando' },
+                        { value: 'concluido', label: 'Concluído' },
+                        { value: 'recusado', label: 'Recusado' },
+                    ],
+                },
+            ],
+        },
     });
 
     document.addEventListener('click', async (e) => {

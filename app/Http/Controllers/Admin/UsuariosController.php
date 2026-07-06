@@ -21,6 +21,11 @@ class UsuariosController extends Controller
     {
         $query = User::query()->select(['id', 'nome', 'email', 'whatsapp', 'role', 'saldo_disponivel', 'created_at']);
 
+        $filters = $request->input('filters', []);
+        if (! empty($filters['role'])) {
+            $query->where('role', $filters['role']);
+        }
+
         return DataTables::eloquent($query)
             ->editColumn('saldo_disponivel', fn ($u) => 'R$ ' . number_format((float) $u->saldo_disponivel, 2, ',', '.'))
             ->editColumn('created_at', fn ($u) => $u->created_at?->format('d/m/Y'))

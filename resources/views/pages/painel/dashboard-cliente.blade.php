@@ -23,6 +23,47 @@
     </div>
 </div>
 
+@php
+    $usadoBytes = (int) auth()->user()->armazenamento_bytes;
+    $limiteBytes = auth()->user()->armazenamentoLimiteBytes();
+    $percentual = auth()->user()->armazenamentoPercentual();
+    $format = function ($b) {
+        if ($b < 1024) return "{$b} B";
+        if ($b < 1048576) return number_format($b / 1024, 1, ',', '.') . ' KB';
+        if ($b < 1073741824) return number_format($b / 1048576, 1, ',', '.') . ' MB';
+        return number_format($b / 1073741824, 2, ',', '.') . ' GB';
+    };
+    $barCor = $percentual >= 95 ? 'bg-danger' : ($percentual >= 80 ? 'bg-warning' : 'bg-success');
+@endphp
+<div class="panda-card mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <div>
+            <h3 class="h6 fw-bold mb-0">Armazenamento</h3>
+            @if(auth()->user()->plano)
+                <small class="text-muted">Plano {{ auth()->user()->plano->nome }}</small>
+            @endif
+        </div>
+        <div class="text-end">
+            <div class="fw-bold">{{ $format($usadoBytes) }}</div>
+            @if($limiteBytes)
+                <small class="text-muted">de {{ $format((int) $limiteBytes) }}</small>
+            @else
+                <small class="text-muted">sem plano definido</small>
+            @endif
+        </div>
+    </div>
+    <div class="progress" style="height: 8px;">
+        <div class="progress-bar {{ $barCor }}" style="width: {{ $limiteBytes ? min(100, $percentual) : 0 }}%"></div>
+    </div>
+    @if($limiteBytes && $percentual >= 80)
+        <p class="small text-warning mt-2 mb-0">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            {{ $percentual >= 95 ? 'Cota quase esgotada.' : 'Perto do limite.' }}
+            Remova eventos, álbuns ou vídeos para liberar espaço.
+        </p>
+    @endif
+</div>
+
 <div class="row g-4 mb-4">
     <div class="col-lg-6">
         <div class="panda-card h-100">

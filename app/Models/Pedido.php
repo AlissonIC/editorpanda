@@ -11,6 +11,7 @@ class Pedido extends Model
     protected $fillable = [
         'album_id',
         'user_id',
+        'comprador_id',
         'comprador_nome',
         'comprador_email',
         'comprador_whatsapp',
@@ -41,5 +42,10 @@ class Pedido extends Model
     public function itens(): HasMany
     {
         return $this->hasMany(PedidoItem::class);
+    }
+
+    public function comprador(): BelongsTo
+    {
+        return $this->belongsTo(Comprador::class);
     }
 }
