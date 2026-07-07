@@ -21,6 +21,12 @@ Artisan::command('inspire', function () {
 | Em produção: cron rodando `php artisan schedule:run` a cada minuto.
 */
 
+// Expira assinaturas vencidas — diário às 00:05 pra pegar viragens de meia-noite
+Schedule::command('panda:expirar-assinaturas')
+    ->dailyAt('00:05')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 Schedule::command('panda:limpar-uploads-abandonados --horas=24')
     ->dailyAt('03:00')
     ->withoutOverlapping()

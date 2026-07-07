@@ -14,28 +14,51 @@
 
 <div class="row g-4">
     <div class="col-lg-9">
-        {{-- Dropzone compacto: empilha em mobile --}}
-        <div class="panda-card p-0 overflow-hidden">
-            <div
-                id="dropzone"
-                class="dropzone dropzone-compact p-4"
-                data-init-url="{{ route('painel.albuns.videos.init', $album) }}"
-            >
-                <div class="dz-icon">
-                    <i class="bi bi-cloud-arrow-up"></i>
+        @if(! $temPlanoAtivo)
+            {{-- Sem plano: bloqueia envios, mostra CTA claro --}}
+            <div class="panda-card p-0 overflow-hidden">
+                <div class="p-4 d-flex align-items-center gap-3 flex-wrap"
+                     style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-radius: .75rem;">
+                    <div class="d-inline-flex align-items-center justify-content-center"
+                         style="width:52px;height:52px;border-radius:.6rem;background:rgba(255,255,255,.7);color:#d97706;font-size:1.5rem;">
+                        <i class="bi bi-lock-fill"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h5 class="fw-bold mb-1">Envio bloqueado</h5>
+                        <p class="mb-0 small">
+                            Você não tem plano ativo. Assine um plano para enviar vídeos.
+                            Seus vídeos existentes continuam disponíveis abaixo.
+                        </p>
+                    </div>
+                    <a href="{{ route('painel.assinatura.index') }}" class="btn btn-dark">
+                        <i class="bi bi-award me-1"></i> Escolher plano
+                    </a>
                 </div>
-                <div class="dz-text">
-                    <h5 class="fw-bold mb-1">Arraste vídeos ou clique para adicionar</h5>
-                    <p class="small text-muted mb-0">
-                        MP4, MOV, MKV ou WEBM · envio em partes — até 20&nbsp;GB por arquivo
-                    </p>
-                </div>
-                <button type="button" class="btn btn-dark-panda dz-btn" id="btn-select">
-                    <i class="bi bi-plus-lg me-1"></i> Adicionar
-                </button>
-                <input type="file" id="file-input" class="d-none" accept="video/mp4,video/quicktime,video/x-matroska,video/webm" multiple>
             </div>
-        </div>
+        @else
+            {{-- Dropzone compacto: empilha em mobile --}}
+            <div class="panda-card p-0 overflow-hidden">
+                <div
+                    id="dropzone"
+                    class="dropzone dropzone-compact p-4"
+                    data-init-url="{{ route('painel.albuns.videos.init', $album) }}"
+                >
+                    <div class="dz-icon">
+                        <i class="bi bi-cloud-arrow-up"></i>
+                    </div>
+                    <div class="dz-text">
+                        <h5 class="fw-bold mb-1">Arraste vídeos ou clique para adicionar</h5>
+                        <p class="small text-muted mb-0">
+                            MP4, MOV, MKV ou WEBM · envio em partes — até 20&nbsp;GB por arquivo
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn-dark-panda dz-btn" id="btn-select">
+                        <i class="bi bi-plus-lg me-1"></i> Adicionar
+                    </button>
+                    <input type="file" id="file-input" class="d-none" accept="video/mp4,video/quicktime,video/x-matroska,video/webm" multiple>
+                </div>
+            </div>
+        @endif
 
         {{-- Área unificada de vídeos --}}
         <div class="panda-card mt-4">

@@ -35,6 +35,25 @@ class PerfilController extends Controller
         ]);
     }
 
+    public function updateEndereco(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'cep' => ['nullable', 'string', 'max:9'],
+            'logradouro' => ['nullable', 'string', 'max:150'],
+            'numero' => ['nullable', 'string', 'max:20'],
+            'complemento' => ['nullable', 'string', 'max:100'],
+            'bairro' => ['nullable', 'string', 'max:100'],
+            'cidade' => ['nullable', 'string', 'max:100'],
+            'estado' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $user->update($data);
+
+        return response()->json(['message' => 'Endereço atualizado.']);
+    }
+
     public function updateSenha(Request $request): JsonResponse
     {
         $request->validate([

@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Models\Album;
 use App\Models\Evento;
-use App\Models\Lead;
 use App\Models\Plano;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -79,11 +78,6 @@ class DatabaseSeeder extends Seeder
                 'preco' => 99.90,
                 'status' => 'publicado',
             ]
-        );
-
-        Lead::firstOrCreate(
-            ['email' => 'lead-exemplo@panda.test'],
-            ['whatsapp' => '(11) 91234-5678', 'origem' => 'landing']
         );
     }
 }

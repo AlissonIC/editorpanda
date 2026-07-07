@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Admin;
 use App\Http\Controllers\Comprador;
-use App\Http\Controllers\LeadController;
 use App\Http\Controllers\Painel;
 use App\Http\Controllers\PublicController;
 use App\Http\Controllers\Publico;
@@ -15,7 +14,6 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', [PublicController::class, 'home'])->name('home');
-Route::post('/leads', [LeadController::class, 'store'])->name('leads.store');
 
 // -------- Vitrines públicas (evento + álbum + checkout) --------
 Route::name('publico.')->group(function () {
@@ -60,6 +58,7 @@ Route::middleware('auth')->prefix('painel')->name('painel.')->group(function () 
     // Perfil (todo usuário logado)
     Route::get('perfil', [Painel\PerfilController::class, 'edit'])->name('perfil.edit');
     Route::put('perfil/dados', [Painel\PerfilController::class, 'updateDados'])->name('perfil.dados');
+    Route::put('perfil/endereco', [Painel\PerfilController::class, 'updateEndereco'])->name('perfil.endereco');
     Route::put('perfil/senha', [Painel\PerfilController::class, 'updateSenha'])->name('perfil.senha');
     Route::post('perfil/foto', [Painel\PerfilController::class, 'updateFoto'])->name('perfil.foto.upload');
     Route::delete('perfil/foto', [Painel\PerfilController::class, 'deleteFoto'])->name('perfil.foto.delete');
@@ -111,6 +110,12 @@ Route::middleware('auth')->prefix('painel')->name('painel.')->group(function () 
         Route::get('relatorio', [Painel\RelatorioController::class, 'index'])->name('relatorio.index');
         Route::get('relatorio/vendas-por-mes', [Painel\RelatorioController::class, 'vendasPorMes'])->name('relatorio.vendas.mes');
         Route::get('relatorio/top-albuns', [Painel\RelatorioController::class, 'topAlbuns'])->name('relatorio.top.albuns');
+
+        // Assinatura — plano ativo + histórico + renovação
+        Route::get('assinatura', [Painel\AssinaturaController::class, 'index'])->name('assinatura.index');
+        Route::post('assinatura/assinar/{plano}', [Painel\AssinaturaController::class, 'assinar'])->name('assinatura.assinar');
+        Route::post('assinatura/renovar', [Painel\AssinaturaController::class, 'renovar'])->name('assinatura.renovar');
+        Route::post('assinatura/cancelar', [Painel\AssinaturaController::class, 'cancelar'])->name('assinatura.cancelar');
     });
 
     // Admin-only
@@ -132,10 +137,6 @@ Route::middleware('auth')->prefix('painel')->name('painel.')->group(function () 
         Route::get('processamento', [Admin\ProcessamentoController::class, 'index'])->name('processamento.index');
         Route::get('processamento/data', [Admin\ProcessamentoController::class, 'data'])->name('processamento.data');
         Route::post('processamento/{video}/reprocessar', [Admin\ProcessamentoController::class, 'reprocessar'])->name('processamento.reprocessar');
-
-        Route::get('leads', [Admin\LeadsController::class, 'index'])->name('leads.index');
-        Route::get('leads/data', [Admin\LeadsController::class, 'data'])->name('leads.data');
-        Route::delete('leads/{lead}', [Admin\LeadsController::class, 'destroy'])->name('leads.destroy');
 
         Route::get('configuracoes', [Admin\ConfiguracoesController::class, 'index'])->name('configuracoes.index');
         Route::put('configuracoes', [Admin\ConfiguracoesController::class, 'update'])->name('configuracoes.update');

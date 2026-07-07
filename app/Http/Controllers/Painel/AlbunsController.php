@@ -139,8 +139,9 @@ class AlbunsController extends Controller
 
         $album->load('evento:id,nome');
         $disco = Configuracao::storageDisk();
+        $temPlanoAtivo = auth()->user()->temPlanoAtivo();
 
-        return view('pages.painel.albuns-upload', compact('album', 'disco'));
+        return view('pages.painel.albuns-upload', compact('album', 'disco', 'temPlanoAtivo'));
     }
 
     public function uploadVideo(Request $request, Album $album): JsonResponse
@@ -158,8 +159,17 @@ class AlbunsController extends Controller
         $video = \DB::transaction(function () use ($request, $album, $tamanho) {
             $userId = auth()->id();
             $user = \App\Models\User::whereKey($userId)->lockForUpdate()->first();
-            $limite = $user->armazenamentoLimiteBytes();
 
+            // Plano ativo é OBRIGATÓRIO para enviar vídeos
+            if (! $user->temPlanoAtivo()) {
+                abort(response()->json([
+                    'message' => 'Você não tem plano ativo. Assine um plano para enviar vídeos.',
+                    'sem_plano' => true,
+                    'assinatura_url' => route('painel.assinatura.index'),
+                ], 422));
+            }
+
+            $limite = $user->armazenamentoLimiteBytes();
             if ($limite !== null && ($user->armazenamento_bytes + $tamanho) > $limite) {
                 $limiteGb = (int) ($user->plano?->armazenamento_gb ?? 0);
                 $usadoGb = number_format($user->armazenamento_bytes / 1024 / 1024 / 1024, 2, ',', '.');

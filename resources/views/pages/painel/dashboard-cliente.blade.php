@@ -24,6 +24,51 @@
 </div>
 
 @php
+    $assinatura = auth()->user()->assinaturaAtiva();
+    $diasRest = $assinatura ? max(0, (int) ceil(now()->diffInDays($assinatura->expira_em, false))) : null;
+    $expiraProx = $diasRest !== null && $diasRest <= 7;
+@endphp
+
+{{-- Plano ativo --}}
+<div class="panda-card mb-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div class="d-flex align-items-center gap-3">
+            <div class="d-inline-flex align-items-center justify-content-center"
+                 style="width:52px;height:52px;border-radius:0.6rem;background:{{ $assinatura ? '#ebe9fd' : '#fef3c7' }};color:{{ $assinatura ? '#7367f0' : '#d97706' }};font-size:1.5rem;">
+                <i class="bi {{ $assinatura ? 'bi-award' : 'bi-exclamation-triangle' }}"></i>
+            </div>
+            <div>
+                <div class="text-uppercase small text-muted">Plano ativo</div>
+                @if($assinatura)
+                    <div class="fw-bold fs-5">{{ $assinatura->plano_nome }}</div>
+                    <small class="text-muted">
+                        Vence em {{ $assinatura->expira_em->format('d/m/Y') }} ·
+                        <span class="{{ $expiraProx ? 'text-warning fw-semibold' : '' }}">{{ $diasRest }} dia(s) restantes</span>
+                    </small>
+                @else
+                    <div class="fw-bold fs-5 text-warning">Sem plano ativo</div>
+                    <small class="text-muted">Assine para desbloquear a plataforma.</small>
+                @endif
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            @if($assinatura)
+                <a href="{{ route('painel.assinatura.index') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-clock-history me-1"></i>Histórico
+                </a>
+                <a href="{{ route('painel.assinatura.index') }}" class="btn btn-dark-panda btn-sm">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Renovar
+                </a>
+            @else
+                <a href="{{ route('painel.assinatura.index') }}" class="btn btn-dark-panda">
+                    Escolher plano
+                </a>
+            @endif
+        </div>
+    </div>
+</div>
+
+@php
     $usadoBytes = (int) auth()->user()->armazenamento_bytes;
     $limiteBytes = auth()->user()->armazenamentoLimiteBytes();
     $percentual = auth()->user()->armazenamentoPercentual();

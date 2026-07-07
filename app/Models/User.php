@@ -25,6 +25,15 @@ class User extends Authenticatable
         'password',
         'role',
         'plano_id',
+        // Endereço
+        'cep',
+        'logradouro',
+        'numero',
+        'complemento',
+        'bairro',
+        'cidade',
+        'estado',
+        'plano_expira_em',
         // NÃO adicione `armazenamento_bytes` nem `saldo_disponivel` aqui:
         // são gerenciados exclusivamente por operações server-side via
         // DB::table('users')->update(...) para prevenir mass assignment.
@@ -64,6 +73,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'saldo_disponivel' => 'decimal:2',
             'armazenamento_bytes' => 'integer',
+            'plano_expira_em' => 'datetime',
         ];
     }
 
@@ -83,6 +93,10 @@ class User extends Authenticatable
 
     public function podeArmazenar(int $bytesAdicionais): bool
     {
+        // Sem plano ativo → não pode enviar nada. Admin passa (isAdmin() = true).
+        if (! $this->isAdmin() && ! $this->temPlanoAtivo()) {
+            return false;
+        }
         $limite = $this->armazenamentoLimiteBytes();
         if ($limite === null) return true;
         return ($this->armazenamento_bytes + $bytesAdicionais) <= $limite;
@@ -101,6 +115,29 @@ class User extends Authenticatable
     public function plano(): BelongsTo
     {
         return $this->belongsTo(Plano::class);
+    }
+
+    public function assinaturas(): HasMany
+    {
+        return $this->hasMany(Assinatura::class)->latest('id');
+    }
+
+    /** Assinatura ativa atual (ou null se expirada/cancelada/inexistente). */
+    public function assinaturaAtiva(): ?Assinatura
+    {
+        return $this->assinaturas()->ativas()->first();
+    }
+
+    public function temPlanoAtivo(): bool
+    {
+        return $this->assinaturaAtiva() !== null;
+    }
+
+    public function diasRestantesPlano(): ?int
+    {
+        $a = $this->assinaturaAtiva();
+        if (! $a) return null;
+        return max(0, (int) ceil(now()->diffInDays($a->expira_em, false)));
     }
 
     public function eventos(): HasMany

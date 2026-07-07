@@ -76,6 +76,63 @@
             </form>
         </div>
 
+        {{-- Endereço --}}
+        <div class="panda-card mb-4">
+            <h3 class="h6 fw-bold mb-3">Endereço</h3>
+
+            <form id="form-endereco" novalidate>
+                @csrf
+                {{-- Linha 1: CEP · Estado · Cidade --}}
+                <div class="row g-3">
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label small">CEP</label>
+                        <input type="text" name="cep" value="{{ $user->cep }}" class="form-control" placeholder="00000-000">
+                        <div class="invalid-feedback" data-field="cep"></div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label small">Estado</label>
+                        @include('theme::partials.select-estado', ['name' => 'estado', 'selected' => $user->estado])
+                        <div class="invalid-feedback" data-field="estado"></div>
+                    </div>
+                    <div class="col-md-5 mb-3">
+                        <label class="form-label small">Cidade</label>
+                        <input type="text" name="cidade" value="{{ $user->cidade }}" class="form-control" autocomplete="address-level2">
+                        <div class="invalid-feedback" data-field="cidade"></div>
+                    </div>
+                </div>
+
+                {{-- Linha 2: Bairro · Logradouro · Nº --}}
+                <div class="row g-3">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label small">Bairro</label>
+                        <input type="text" name="bairro" value="{{ $user->bairro }}" class="form-control">
+                        <div class="invalid-feedback" data-field="bairro"></div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label small">Endereço</label>
+                        <input type="text" name="logradouro" value="{{ $user->logradouro }}" class="form-control" placeholder="Rua, avenida…" autocomplete="street-address">
+                        <div class="invalid-feedback" data-field="logradouro"></div>
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <label class="form-label small">Nº</label>
+                        <input type="text" name="numero" value="{{ $user->numero }}" class="form-control">
+                        <div class="invalid-feedback" data-field="numero"></div>
+                    </div>
+                </div>
+
+                {{-- Linha 3: Complemento --}}
+                <div class="mb-3">
+                    <label class="form-label small">Complemento</label>
+                    <input type="text" name="complemento" value="{{ $user->complemento }}" class="form-control" placeholder="Apto, sala, bloco…">
+                    <div class="invalid-feedback" data-field="complemento"></div>
+                </div>
+
+                <div class="d-flex justify-content-end">
+                    <button type="submit" class="btn btn-dark-panda">Salvar endereço</button>
+                </div>
+            </form>
+        </div>
+
         {{-- Senha --}}
         <div class="panda-card">
             <h3 class="h6 fw-bold mb-3">Trocar senha</h3>

@@ -54,9 +54,6 @@
                 <a href="{{ route('painel.processamento.index') }}" class="btn btn-outline-secondary text-start">
                     <i class="bi bi-cpu me-2"></i> Fila de processamento
                 </a>
-                <a href="{{ route('painel.leads.index') }}" class="btn btn-outline-secondary text-start">
-                    <i class="bi bi-envelope me-2"></i> Ver leads capturados
-                </a>
             </div>
         </div>
     </div>

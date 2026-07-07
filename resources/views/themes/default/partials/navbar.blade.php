@@ -30,10 +30,10 @@
 
                 @if($isAdmin)
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.planos') ? 'active' : '' }}" href="{{ route('painel.planos.index') }}">Planos</a></li>
-                    <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.leads') ? 'active' : '' }}" href="{{ route('painel.leads.index') }}">Leads</a></li>
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.configuracoes') ? 'active' : '' }}" href="{{ route('painel.configuracoes.index') }}">Configurações</a></li>
                 @else
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.relatorio') ? 'active' : '' }}" href="{{ route('painel.relatorio.index') }}">Relatório</a></li>
+                    <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.assinatura') ? 'active' : '' }}" href="{{ route('painel.assinatura.index') }}">Assinatura</a></li>
                 @endif
             </ul>
             @php $u = auth()->user(); @endphp
@@ -48,13 +48,15 @@
                             {{ $u->iniciais }}
                         </span>
                     @endif
-                    <span>{{ $u->nome }}</span>
                     <i class="bi bi-chevron-down small"></i>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><span class="dropdown-item-text small text-muted">{{ $u->email }}</span></li>
                     <li><hr class="dropdown-divider"></li>
                     <li><a class="dropdown-item" href="{{ route('painel.perfil.edit') }}"><i class="bi bi-person me-2"></i>Meu Perfil</a></li>
+                    @if(! $isAdmin)
+                        <li><a class="dropdown-item" href="{{ route('painel.assinatura.index') }}"><i class="bi bi-award me-2"></i>Minha Assinatura</a></li>
+                    @endif
                     <li><hr class="dropdown-divider"></li>
                     <li>
                         <form method="POST" action="{{ route('logout') }}">@csrf

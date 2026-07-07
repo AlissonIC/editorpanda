@@ -52,6 +52,30 @@ export function moneyRaw(input) {
     return input?.dataset?.rawValue ?? '0.00';
 }
 
+/**
+ * CEP: máscara 99999-999.
+ */
+export function bindCep(input) {
+    if (!input || input.dataset.maskBound) return;
+    input.dataset.maskBound = 'cep';
+    input.setAttribute('inputmode', 'numeric');
+    input.setAttribute('maxlength', '9');
+    input.setAttribute('autocomplete', 'postal-code');
+
+    const format = (digits) => {
+        digits = digits.slice(0, 8);
+        if (digits.length <= 5) return digits;
+        return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+    };
+
+    const handler = () => {
+        input.value = format(input.value.replace(/\D/g, ''));
+    };
+    input.addEventListener('input', handler);
+    input.addEventListener('blur', handler);
+    handler();
+}
+
 export function bindPhone(input) {
     if (!input || input.dataset.maskBound) return;
     input.dataset.maskBound = '1';

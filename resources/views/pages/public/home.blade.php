@@ -2,6 +2,26 @@
 
 @section('titulo', 'Editor Panda — Plataforma de Gestão de Mídia')
 
+@php
+    // CTA dinâmico conforme sessão:
+    //   dono (admin/cliente) → Dashboard do painel
+    //   comprador logado     → Minhas compras
+    //   visitante            → Entrar (login)
+    if (auth()->check()) {
+        $ctaUrl = route('painel.dashboard');
+        $ctaLabelCurto = 'Dashboard';
+        $ctaLabelLongo = 'Acessar Dashboard';
+    } elseif (auth('comprador')->check()) {
+        $ctaUrl = route('publico.minhas-compras');
+        $ctaLabelCurto = 'Minhas compras';
+        $ctaLabelLongo = 'Ir para minhas compras';
+    } else {
+        $ctaUrl = route('login');
+        $ctaLabelCurto = 'Entrar';
+        $ctaLabelLongo = 'Entrar';
+    }
+@endphp
+
 @section('conteudo')
 <div class="landing">
 
@@ -19,7 +39,7 @@
                 <li><a href="#planos">Planos</a></li>
                 <li><a href="#contato">Contato</a></li>
             </ul>
-            <a href="{{ route('login') }}" class="btn btn-dark rounded-pill px-3 py-2 fw-semibold">Dashboard</a>
+            <a href="{{ $ctaUrl }}" class="btn btn-dark rounded-pill px-3 py-2 fw-semibold">{{ $ctaLabelCurto }}</a>
         </div>
     </nav>
 
@@ -56,8 +76,8 @@
             </div>
 
             <div class="d-flex flex-wrap justify-content-center gap-2 mt-4">
-                <a href="{{ route('login') }}" class="btn btn-light rounded-pill px-4 py-2 fw-semibold">
-                    Acessar Dashboard <i class="bi bi-arrow-right ms-1"></i>
+                <a href="{{ $ctaUrl }}" class="btn btn-light rounded-pill px-4 py-2 fw-semibold">
+                    {{ $ctaLabelLongo }} <i class="bi bi-arrow-right ms-1"></i>
                 </a>
                 <a href="#beneficios" class="btn btn-outline-light rounded-pill px-4 py-2 fw-semibold">
                     Por que escolher?
@@ -261,7 +281,7 @@
                                 <li><i class="bi bi-check2"></i> {{ $plano->armazenamento_gb }} GB de armazenamento</li>
                                 <li><i class="bi bi-check2"></i> {{ number_format((float) $plano->taxa_por_venda, 2, ',', '.') }}% de taxa por venda</li>
                             </ul>
-                            <a href="{{ route('login') }}" class="btn btn-dark w-100 rounded-pill py-2">Contratar</a>
+                            <a href="{{ $ctaUrl }}" class="btn btn-dark w-100 rounded-pill py-2">Contratar</a>
                         </div>
                     </div>
                 @endforeach
@@ -277,8 +297,8 @@
             <p class="cta-sub mx-auto mt-3">
                 Junte-se a fotógrafos e videomakers que já estão ganhando dinheiro com o Editor Panda.
             </p>
-            <a href="{{ route('login') }}" class="btn btn-light rounded-pill px-4 py-2 fw-semibold mt-3">
-                Acessar Dashboard
+            <a href="{{ $ctaUrl }}" class="btn btn-light rounded-pill px-4 py-2 fw-semibold mt-3">
+                {{ $ctaLabelLongo }}
             </a>
         </div>
     </section>
