@@ -51,7 +51,7 @@ Route::name('publico.')->group(function () {
 |--------------------------------------------------------------------------
 */
 
-Route::middleware('auth')->prefix('painel')->name('painel.')->group(function () {
+Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->group(function () {
 
     Route::get('/', [Painel\DashboardController::class, 'index'])->name('dashboard');
 
@@ -124,6 +124,8 @@ Route::middleware('auth')->prefix('painel')->name('painel.')->group(function () 
         Route::get('usuarios', [Admin\UsuariosController::class, 'index'])->name('usuarios.index');
         Route::get('usuarios/data', [Admin\UsuariosController::class, 'data'])->name('usuarios.data');
         Route::post('usuarios', [Admin\UsuariosController::class, 'store'])->name('usuarios.store');
+        Route::post('usuarios/{user}/aprovar', [Admin\UsuariosController::class, 'aprovar'])->name('usuarios.aprovar');
+        Route::post('usuarios/{user}/bloquear', [Admin\UsuariosController::class, 'bloquear'])->name('usuarios.bloquear');
         Route::get('usuarios/{user}', [Admin\UsuariosController::class, 'show'])->name('usuarios.show');
         Route::put('usuarios/{user}', [Admin\UsuariosController::class, 'update'])->name('usuarios.update');
         Route::delete('usuarios/{user}', [Admin\UsuariosController::class, 'destroy'])->name('usuarios.destroy');

@@ -17,6 +17,7 @@ Route::middleware('guest')->group(function () {
 
     Route::get('cadastrar', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('cadastrar', [RegisteredUserController::class, 'store']);
+    Route::get('cadastro/aguardando', fn () => view('auth.cadastro-aguardando'))->name('cadastro.aguardando');
 
     Route::get('esqueci-a-senha', [PasswordResetLinkController::class, 'create'])->name('password.request');
     Route::post('esqueci-a-senha', [PasswordResetLinkController::class, 'store'])->name('password.email');

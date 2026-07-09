@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureAprovado;
 use App\Http\Middleware\EnsureRole;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -14,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'role' => EnsureRole::class,
+            'aprovado' => EnsureAprovado::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

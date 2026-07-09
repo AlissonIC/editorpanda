@@ -7,7 +7,6 @@ use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
 use Illuminate\View\View;
@@ -34,12 +33,12 @@ class RegisteredUserController extends Controller
             'whatsapp' => $request->whatsapp,
             'password' => Hash::make($request->password),
             'role' => User::ROLE_CLIENTE,
+            'status' => User::STATUS_PENDENTE,   // aguarda aprovação do admin
         ]);
 
         event(new Registered($user));
 
-        Auth::login($user);
-
-        return redirect()->route('painel.dashboard');
+        // NÃO faz auto-login — cliente precisa esperar aprovação manual.
+        return redirect()->route('cadastro.aguardando')->with('email', $user->email);
     }
 }

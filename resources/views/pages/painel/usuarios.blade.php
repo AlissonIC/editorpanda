@@ -18,6 +18,7 @@
                     <th>E-mail</th>
                     <th>WhatsApp</th>
                     <th>Perfil</th>
+                    <th>Status</th>
                     <th>Saldo</th>
                     <th>Criado em</th>
                     <th class="text-end">Ações</th>

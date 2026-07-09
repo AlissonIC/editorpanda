@@ -17,6 +17,10 @@ class User extends Authenticatable
     public const ROLE_ADMIN = 'admin';
     public const ROLE_CLIENTE = 'cliente';
 
+    public const STATUS_PENDENTE = 'pendente';
+    public const STATUS_APROVADO = 'aprovado';
+    public const STATUS_BLOQUEADO = 'bloqueado';
+
     protected $fillable = [
         'nome',
         'email',
@@ -24,6 +28,9 @@ class User extends Authenticatable
         'foto_perfil',
         'password',
         'role',
+        'status',
+        'aprovado_em',
+        'aprovado_por',
         'plano_id',
         // Endereço
         'cep',
@@ -74,7 +81,23 @@ class User extends Authenticatable
             'saldo_disponivel' => 'decimal:2',
             'armazenamento_bytes' => 'integer',
             'plano_expira_em' => 'datetime',
+            'aprovado_em' => 'datetime',
         ];
+    }
+
+    public function isAprovado(): bool
+    {
+        return $this->status === self::STATUS_APROVADO;
+    }
+
+    public function isPendente(): bool
+    {
+        return $this->status === self::STATUS_PENDENTE;
+    }
+
+    public function isBloqueado(): bool
+    {
+        return $this->status === self::STATUS_BLOQUEADO;
     }
 
     /** Limite do plano em bytes, ou null se sem plano (ilimitado). */

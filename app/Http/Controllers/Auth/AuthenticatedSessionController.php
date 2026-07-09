@@ -26,6 +26,21 @@ class AuthenticatedSessionController extends Controller
     {
         $request->authenticate();
 
+        $user = Auth::user();
+
+        // Bloqueia entrada de contas pendentes/bloqueadas
+        if (! $user->isAprovado()) {
+            $motivo = $user->isBloqueado()
+                ? 'Sua conta foi bloqueada. Entre em contato com o suporte.'
+                : 'Sua conta ainda está em análise. Aguarde a aprovação por email.';
+
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('login')->withErrors(['email' => $motivo]);
+        }
+
         $request->session()->regenerate();
 
         return redirect()->intended(route('painel.dashboard'));
