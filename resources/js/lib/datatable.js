@@ -116,9 +116,11 @@ function buildFilterBar(tableEl, config, onChange) {
         });
     }
 
-    // Insere antes da tabela (dentro do card se houver)
-    const anchor = tableEl.closest('.panda-card') || tableEl.parentElement;
-    anchor.insertBefore(wrap, anchor.firstChild);
+    // Insere imediatamente antes da tabela (ou do seu .table-responsive wrapper).
+    // Assim, em páginas com abas/múltiplas tabelas, cada barra fica junto da
+    // sua tabela em vez de empilhar todas no topo do card.
+    const alvo = tableEl.closest('.table-responsive') || tableEl;
+    alvo.parentElement.insertBefore(wrap, alvo);
 
     return state;
 }
