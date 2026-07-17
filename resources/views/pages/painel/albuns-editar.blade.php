@@ -106,7 +106,7 @@
 
         <div class="col-lg-4">
             {{-- Barra de ação --}}
-            <div class="panda-card mb-4 position-sticky" style="top: 90px;">
+            <div class="panda-card mb-4">
                 <button type="submit" class="btn btn-dark-panda w-100 py-2 fw-bold">
                     <i class="bi bi-check-lg me-1"></i>Salvar alterações
                 </button>
@@ -124,6 +124,32 @@
                     </button>
                 </div>
             </div>
+
+            {{-- Downloads em massa --}}
+            @php
+                $videosConcluidos = $album->videos()->where('status', 'concluido')->get(['id', 'nome']);
+            @endphp
+            @if($videosConcluidos->isNotEmpty())
+                <div class="panda-card mb-4"
+                     data-zip-url="{{ route('painel.albuns.download-zip', $album) }}"
+                     id="alb-download-box">
+                    <h6 class="fw-bold mb-2"><i class="bi bi-download me-1"></i>Downloads</h6>
+                    <p class="small text-muted mb-3">
+                        {{ $videosConcluidos->count() }} vídeo(s) processado(s) disponível(is).
+                    </p>
+                    <div class="d-grid gap-2 mb-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm alb-zip-all" data-tipo="processado">
+                            <i class="bi bi-file-zip me-1"></i>Baixar processados (ZIP)
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm alb-zip-all" data-tipo="original">
+                            <i class="bi bi-file-zip me-1"></i>Baixar originais (ZIP)
+                        </button>
+                    </div>
+                    <small class="text-muted d-block">
+                        Para baixar arquivos individuais, use a página de <a href="{{ route('painel.albuns.enviar', $album) }}">gerenciar vídeos</a>.
+                    </small>
+                </div>
+            @endif
         </div>
     </div>
 </form>

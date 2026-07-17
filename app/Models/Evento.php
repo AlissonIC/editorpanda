@@ -68,9 +68,13 @@ class Evento extends Model
     public function getLogoUrlAttribute(): ?string
     {
         if (! $this->logo_path) return null;
-        // Roteia pela rota auth `painel.eventos.logo.serve` — não vaza path privado
-        // e funciona idêntico pra disco local e S3.
+        // Se o evento está ativo, usa a rota PÚBLICA (visitantes não logados
+        // conseguem ver o logo na vitrine). Caso contrário, cai na rota auth
+        // usada pelo painel de edição.
         try {
+            if ($this->status === 'ativo') {
+                return route('publico.evento.logo', $this->slug);
+            }
             return route('painel.eventos.logo.serve', $this);
         } catch (\Throwable) {
             return null;

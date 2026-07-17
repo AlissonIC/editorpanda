@@ -50,9 +50,16 @@ class DashboardController extends Controller
             ->whereMonth('pago_em', now()->month)
             ->whereYear('pago_em', now()->year)
             ->sum('total');
-        $fotosVendidas = (int) Video::where('user_id', $user->id)
-            ->whereHas('album.pedidos', fn ($q) => $q->where('status', 'pago'))
-            ->count();
+        // Conta distinct só os vídeos que APARECEM em pedido_itens de pedido pago.
+        // A versão antiga contava todo vídeo do álbum se qualquer pedido do álbum
+        // estivesse pago — inflava a métrica.
+        $fotosVendidas = (int) \DB::table('pedido_itens')
+            ->join('pedidos', 'pedidos.id', '=', 'pedido_itens.pedido_id')
+            ->join('videos', 'videos.id', '=', 'pedido_itens.video_id')
+            ->where('videos.user_id', $user->id)
+            ->where('pedidos.status', 'pago')
+            ->distinct()
+            ->count('pedido_itens.video_id');
         $pedidosPendentes = Pedido::where('user_id', $user->id)
             ->where('status', 'pendente')->count();
 

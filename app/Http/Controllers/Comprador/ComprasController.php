@@ -3,8 +3,12 @@
 namespace App\Http\Controllers\Comprador;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\MesclarVideosJob;
+use App\Models\Configuracao;
 use App\Models\Pedido;
 use App\Models\Video;
+use App\Models\VideoMerge;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
@@ -58,5 +62,92 @@ class ComprasController extends Controller
         }
 
         return Storage::disk('local')->download($path, $video->nome);
+    }
+
+    /**
+     * Solicita mescla de N vídeos comprados em um único arquivo. Assíncrono.
+     */
+    public function solicitarMerge(Request $request, Pedido $pedido): JsonResponse
+    {
+        $comprador = auth('comprador')->user();
+        abort_unless($pedido->comprador_id === $comprador->id, 403);
+        abort_unless($pedido->status === 'pago', 422, 'Pedido não pago.');
+
+        $data = $request->validate([
+            'video_ids' => ['required', 'array', 'min:2'],
+            'video_ids.*' => ['integer'],
+        ]);
+
+        // Todos os video_ids têm que estar nos itens desse pedido
+        $itensIds = $pedido->itens()->pluck('video_id')->all();
+        $selecionados = array_intersect($data['video_ids'], $itensIds);
+        abort_if(count($selecionados) < 2, 422, 'Selecione pelo menos 2 vídeos do pedido.');
+
+        // Só concluídos
+        $videos = Video::whereIn('id', $selecionados)
+            ->where('status', Video::STATUS_CONCLUIDO)
+            ->whereNotNull('arquivo_processado_path')
+            ->pluck('id')->all();
+        abort_if(count($videos) < 2, 422, 'Precisa de 2+ vídeos concluídos.');
+
+        $orderedIds = array_values(array_intersect($data['video_ids'], $videos));
+
+        $merge = VideoMerge::create([
+            'comprador_id' => $comprador->id,
+            'pedido_id' => $pedido->id,
+            'user_id' => null,
+            'video_ids' => $orderedIds,
+            'status' => VideoMerge::STATUS_PENDENTE,
+            'disk' => Configuracao::storageDisk(),
+        ]);
+
+        MesclarVideosJob::dispatch($merge->id);
+
+        return response()->json([
+            'merge_id' => $merge->id,
+            'slug' => $merge->slug,
+            'status' => $merge->status,
+            'message' => 'Mescla enfileirada — acompanhe em "Minhas compras".',
+        ], 202);
+    }
+
+    public function mergeStatus(VideoMerge $merge): JsonResponse
+    {
+        $comprador = auth('comprador')->user();
+        abort_unless($merge->comprador_id === $comprador->id, 403);
+
+        return response()->json([
+            'id' => $merge->id,
+            'slug' => $merge->slug,
+            'status' => $merge->status,
+            'erro_msg' => $merge->erro_msg,
+            'tamanho_bytes' => $merge->tamanho_bytes,
+            'download_url' => $merge->status === VideoMerge::STATUS_CONCLUIDO
+                ? route('publico.merge.download', $merge)
+                : null,
+        ]);
+    }
+
+    public function baixarMerge(VideoMerge $merge)
+    {
+        $comprador = auth('comprador')->user();
+        abort_unless($merge->comprador_id === $comprador->id, 403);
+        abort_unless($merge->status === VideoMerge::STATUS_CONCLUIDO && $merge->output_path, 404);
+
+        $nome = 'mesclado-' . $merge->slug . '.mp4';
+        $disk = $merge->disk ?: 'local';
+
+        if ($disk === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl($merge->output_path, now()->addMinutes(15), [
+                    'ResponseContentDisposition' => 'attachment; filename="' . $nome . '"',
+                ]);
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+
+        return Storage::disk('local')->download($merge->output_path, $nome);
     }
 }

@@ -17,7 +17,9 @@ class Album extends Model
         'nome',
         'subtitulo',
         'descricao',
-        'capa_path',
+        // capa_path removido do fillable — Album não tem fluxo de upload de capa
+        // (evento é quem tem). Coluna ainda existe no banco para não quebrar
+        // dados legados, mas ninguém deveria mais escrever nela.
         'preco',
         'preco_por_video',
         'status',

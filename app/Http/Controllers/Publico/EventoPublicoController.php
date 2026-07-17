@@ -50,4 +50,26 @@ class EventoPublicoController extends Controller
         }
         return Storage::disk('local')->response($evento->capa_path);
     }
+
+    /**
+     * Serve o logo do evento na página pública.
+     * Só quando evento ativo. Sem essa rota, o <img> da página pública apontava
+     * pra rota auth+aprovado e visitantes recebiam 302 pra login.
+     */
+    public function servirLogo(Evento $evento)
+    {
+        abort_unless($evento->status === 'ativo', 404);
+        abort_unless($evento->logo_path, 404);
+
+        $disco = $evento->logo_disk ?: 'local';
+        if ($disco === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl($evento->logo_path, now()->addMinutes(15));
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+        return Storage::disk('local')->response($evento->logo_path);
+    }
 }

@@ -332,6 +332,7 @@ class VideosUploadController extends Controller
                 $s3->complete($video->arquivo_original_path, $video->upload_id, $doS3);
             } catch (\Throwable $e) {
                 Log::error('Falha CompleteMultipartUpload', ['video_id' => $video->id, 'msg' => $e->getMessage()]);
+                $this->finalizarComoFalhado($video, 'S3: ' . $e->getMessage());
                 return response()->json(['message' => 'Falha ao finalizar no S3: ' . $e->getMessage()], 500);
             }
         } else {
@@ -371,6 +372,7 @@ class VideosUploadController extends Controller
                 $this->concatenarPartesLocais($video, $parts->all());
             } catch (\Throwable $e) {
                 Log::error('Falha ao concatenar partes locais', ['video_id' => $video->id, 'msg' => $e->getMessage()]);
+                $this->finalizarComoFalhado($video, 'Local: ' . $e->getMessage());
                 return response()->json(['message' => 'Falha ao montar arquivo final: ' . $e->getMessage()], 500);
             }
         }
@@ -591,6 +593,35 @@ class VideosUploadController extends Controller
     private function tempDir(Video $video): string
     {
         return "temp/videos/{$video->id}";
+    }
+
+    /**
+     * Falha do complete() — desfaz a reserva de cota do init() e marca o vídeo
+     * como "falhou". Sem isso, o vídeo ficava travado em `enviando` e a cota
+     * do plano ficava bloqueada até o cron de 24h passar.
+     */
+    private function finalizarComoFalhado(Video $video, string $motivo): void
+    {
+        DB::transaction(function () use ($video, $motivo) {
+            $fresh = Video::whereKey($video->id)->lockForUpdate()->first();
+            if (! $fresh || $fresh->status !== Video::STATUS_ENVIANDO) return;
+
+            if ($fresh->tamanho_bytes > 0) {
+                DB::table('users')->where('id', $fresh->user_id)->update([
+                    'armazenamento_bytes' => DB::raw(
+                        'GREATEST(CAST(armazenamento_bytes AS SIGNED) - ' . (int) $fresh->tamanho_bytes . ', 0)'
+                    ),
+                ]);
+            }
+            $fresh->update([
+                'status' => Video::STATUS_FALHOU,
+                'erro_msg' => mb_substr('complete() falhou: ' . $motivo, 0, 500),
+            ]);
+        });
+
+        \App\Models\LogProcessamento::error('upload.complete_failed',
+            'complete() falhou; cota devolvida e vídeo marcado como falhou',
+            ['video_id' => $video->id, 'user_id' => $video->user_id, 'motivo' => $motivo]);
     }
 
     /**

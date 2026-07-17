@@ -75,6 +75,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Baixar todos os processados/originais em ZIP — precisa buscar ids do álbum
+    // primeiro (endpoint que já lista os ids desse álbum).
+    document.querySelectorAll('.alb-zip-all').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const tipo = btn.dataset.tipo;
+            const url = document.getElementById('alb-download-box').dataset.zipUrl;
+            btn.disabled = true;
+            try {
+                // Reusa endpoint já existente pra pegar os ids do álbum
+                const albumEnviarUrl = new URL(url).pathname.replace('/download-zip', '/videos/ids');
+                const { data } = await axios.get(albumEnviarUrl);
+                const ids = data?.ids || [];
+                if (!ids.length) { window.showToast('Nenhum vídeo pra baixar.', 'error'); return; }
+                submitZipForm(url, tipo, ids);
+            } catch {
+                window.showToast('Erro ao preparar download.', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
+
+    function submitZipForm(url, tipo, ids) {
+        const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        form.style.display = 'none';
+        form.innerHTML = `
+            <input type="hidden" name="_token" value="${token}">
+            <input type="hidden" name="tipo" value="${tipo}">
+            ${ids.map((id) => `<input type="hidden" name="video_ids[]" value="${id}">`).join('')}
+        `;
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    }
+
     // Excluir álbum
     document.getElementById('alb-delete')?.addEventListener('click', async (e) => {
         const btn = e.currentTarget;

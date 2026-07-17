@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Pedido;
 use App\Models\Saque;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use Yajra\DataTables\Facades\DataTables;
 
@@ -65,23 +67,42 @@ class FinanceiroController extends Controller
             ->make(true);
     }
 
+    /**
+     * Aprovar saque: o saldo já foi reservado (subtraído de saldo_disponivel)
+     * no momento da solicitação. Aqui só marcamos como pago.
+     */
     public function aprovarSaque(Saque $saque): JsonResponse
     {
-        if ($saque->status !== 'solicitado') {
-            return response()->json(['message' => 'Saque já processado.'], 422);
-        }
-        $saque->update(['status' => 'pago', 'pago_em' => now()]);
-
-        return response()->json(['message' => 'Saque aprovado.']);
+        return DB::transaction(function () use ($saque) {
+            $fresh = Saque::whereKey($saque->id)->lockForUpdate()->first();
+            if ($fresh->status !== 'solicitado') {
+                return response()->json(['message' => 'Saque já processado.'], 422);
+            }
+            $fresh->update(['status' => 'pago', 'pago_em' => now()]);
+            return response()->json(['message' => 'Saque aprovado.']);
+        });
     }
 
+    /**
+     * Recusar saque: devolve o valor ao saldo do vendedor (reversal da reserva
+     * feita na solicitação).
+     */
     public function recusarSaque(Saque $saque): JsonResponse
     {
-        if ($saque->status !== 'solicitado') {
-            return response()->json(['message' => 'Saque já processado.'], 422);
-        }
-        $saque->update(['status' => 'recusado']);
+        return DB::transaction(function () use ($saque) {
+            $fresh = Saque::whereKey($saque->id)->lockForUpdate()->first();
+            if ($fresh->status !== 'solicitado') {
+                return response()->json(['message' => 'Saque já processado.'], 422);
+            }
 
-        return response()->json(['message' => 'Saque recusado.']);
+            $valorCents = (int) round((float) $fresh->valor * 100);
+            User::whereKey($fresh->user_id)->lockForUpdate()->first();
+            DB::table('users')->where('id', $fresh->user_id)->update([
+                'saldo_disponivel' => DB::raw("saldo_disponivel + ({$valorCents} / 100)"),
+            ]);
+
+            $fresh->update(['status' => 'recusado']);
+            return response()->json(['message' => 'Saque recusado e valor devolvido ao saldo.']);
+        });
     }
 }

@@ -21,7 +21,9 @@ class Saque extends Model
     {
         return [
             'valor' => 'decimal:2',
-            'dados_bancarios' => 'array',
+            // encrypted:array — chave/agência/PIX ficam criptografados no banco.
+            // Se o APP_KEY vazar, atacante ainda precisa das duas coisas pra ler.
+            'dados_bancarios' => 'encrypted:array',
             'solicitado_em' => 'datetime',
             'pago_em' => 'datetime',
         ];

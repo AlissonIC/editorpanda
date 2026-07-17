@@ -166,6 +166,46 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBulkBar();
     });
 
+    // Bulk merge: solicita mesclar em 1 vídeo (async)
+    document.querySelector('.js-bulk-merge')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const ids = [...selectedIds];
+        if (ids.length < 2) { window.showToast('Selecione pelo menos 2 vídeos.', 'error'); return; }
+        if (!confirm(`Mesclar ${ids.length} vídeos em um só? O processamento roda em background — te avisamos quando estiver pronto.`)) return;
+        const url = document.getElementById('pv-bulk-download').dataset.mergeUrl;
+        try {
+            const { data } = await axios.post(url, { video_ids: ids });
+            window.showToast(data.message || 'Mescla enfileirada.', 'success');
+        } catch (err) {
+            window.showToast(err.response?.data?.message || 'Erro ao solicitar merge.', 'error');
+        }
+    });
+
+    // Bulk download ZIP: submete via <form> real (browser precisa navegar pra
+    // baixar; XHR não permite download com file-save-dialog).
+    document.querySelectorAll('.js-bulk-zip').forEach((a) => {
+        a.addEventListener('click', (e) => {
+            e.preventDefault();
+            const ids = [...selectedIds];
+            if (!ids.length) { window.showToast('Selecione ao menos um vídeo.', 'error'); return; }
+            const tipo = a.dataset.tipo;
+            const url = document.getElementById('pv-bulk-download').dataset.zipUrl;
+            const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = url;
+            form.style.display = 'none';
+            form.innerHTML = `
+                <input type="hidden" name="_token" value="${token}">
+                <input type="hidden" name="tipo" value="${tipo}">
+                ${ids.map((id) => `<input type="hidden" name="video_ids[]" value="${id}">`).join('')}
+            `;
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        });
+    });
+
     bulkDelete.addEventListener('click', async () => {
         const ids = [...selectedIds];
         if (!ids.length) return;
@@ -309,6 +349,17 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <span class="pv-badge badge bg-${color}-subtle text-${color}-emphasis">${label}</span>
             <div class="pv-actions">
+                ${v.status === 'concluido' ? `
+                    <div class="dropdown">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" title="Baixar">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="/painel/videos/${v.id}/download/processado"><i class="bi bi-film me-2"></i>Vídeo processado</a></li>
+                            <li><a class="dropdown-item" href="/painel/videos/${v.id}/download/original"><i class="bi bi-file-earmark me-2"></i>Original</a></li>
+                        </ul>
+                    </div>
+                ` : ''}
                 <button type="button" class="btn btn-sm btn-outline-danger pv-delete-video" data-id="${v.id}" title="Remover">
                     <i class="bi bi-trash"></i>
                 </button>

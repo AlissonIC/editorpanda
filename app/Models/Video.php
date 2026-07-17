@@ -77,9 +77,26 @@ class Video extends Model
         }
     }
 
+    public function temPedidosPagos(): bool
+    {
+        return DB::table('pedido_itens')
+            ->join('pedidos', 'pedidos.id', '=', 'pedido_itens.pedido_id')
+            ->where('pedido_itens.video_id', $this->id)
+            ->where('pedidos.status', 'pago')
+            ->exists();
+    }
+
     protected static function booted(): void
     {
         static::deleting(function (Video $video) {
+            // Nunca deletar vídeo pago — comprador perderia acesso e o financeiro
+            // ficaria inconsistente. Restrição espelhada no FK restrictOnDelete.
+            if ($video->temPedidosPagos()) {
+                throw new \RuntimeException(
+                    'Vídeo tem pedidos pagos e não pode ser excluído. Considere ocultar do álbum.'
+                );
+            }
+
             $disco = $video->disk ?: 'local';
 
             // Remove todos os arquivos associados COM verificação redundante:

@@ -20,6 +20,7 @@ Route::name('publico.')->group(function () {
     // Prefixo /e/{uuid} = evento; /a/{uuid} = álbum
     Route::get('/e/{evento:slug}', [Publico\EventoPublicoController::class, 'show'])->name('evento.show');
     Route::get('/e/{evento:slug}/capa', [Publico\EventoPublicoController::class, 'servirCapa'])->name('evento.capa');
+    Route::get('/e/{evento:slug}/logo', [Publico\EventoPublicoController::class, 'servirLogo'])->name('evento.logo');
     Route::get('/a/{album:slug}', [Publico\AlbumPublicoController::class, 'show'])->name('album.show');
     // Thumbnails de vídeos em álbuns públicos — sem autenticação
     Route::get('/v/{video}/thumb', [Publico\AlbumPublicoController::class, 'servirThumbnail'])->name('video.thumb');
@@ -33,7 +34,9 @@ Route::name('publico.')->group(function () {
     Route::post('/acessar', [Publico\AcessoController::class, 'solicitar'])
         ->middleware('throttle:10,10')
         ->name('acesso.solicitar');
-    Route::get('/acessar/{token}', [Publico\AcessoController::class, 'validar'])->name('acesso.validar');
+    Route::get('/acessar/{token}', [Publico\AcessoController::class, 'validar'])
+        ->middleware('throttle:30,10')
+        ->name('acesso.validar');
     Route::post('/sair', [Publico\AcessoController::class, 'logout'])->name('acesso.logout');
 
     // Área do comprador (auth guard = comprador)
@@ -42,6 +45,15 @@ Route::name('publico.')->group(function () {
         Route::get('/videos/{video}/baixar', [Comprador\ComprasController::class, 'baixarVideo'])
             ->middleware('throttle:30,1')
             ->name('videos.baixar');
+
+        // Merge async: solicitar, checar status, baixar
+        Route::post('/pedidos/{pedido}/merge', [Comprador\ComprasController::class, 'solicitarMerge'])
+            ->middleware('throttle:5,1')
+            ->name('pedido.merge.solicitar');
+        Route::get('/merges/{merge:slug}', [Comprador\ComprasController::class, 'mergeStatus'])
+            ->name('merge.status');
+        Route::get('/merges/{merge:slug}/download', [Comprador\ComprasController::class, 'baixarMerge'])
+            ->name('merge.download');
     });
 });
 
@@ -86,6 +98,19 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
     Route::put('albuns/{album}', [Painel\AlbunsController::class, 'update'])->name('albuns.update');
     Route::delete('albuns/{album}', [Painel\AlbunsController::class, 'destroy'])->name('albuns.destroy');
     Route::get('albuns/{album}/enviar', [Painel\AlbunsController::class, 'uploadPage'])->name('albuns.enviar');
+    Route::get('videos/{video}/download/{tipo}', [Painel\VideosDownloadController::class, 'single'])
+        ->where('tipo', 'processado|original')
+        ->name('videos.download');
+    Route::post('albuns/{album}/download-zip', [Painel\VideosDownloadController::class, 'zip'])
+        ->name('albuns.download-zip');
+
+    // Merge (concat) de vídeos - dono/admin
+    Route::post('albuns/{album}/merge', [Painel\VideosMergeController::class, 'store'])
+        ->name('albuns.merge.store');
+    Route::get('videos/merge/{merge}', [Painel\VideosMergeController::class, 'show'])
+        ->name('videos.merge.show');
+    Route::get('videos/merge/{merge}/download', [Painel\VideosMergeController::class, 'download'])
+        ->name('videos.merge.download');
     Route::post('albuns/{album}/videos', [Painel\AlbunsController::class, 'uploadVideo'])->name('albuns.videos.upload');
 
     // Upload multipart (S3 nativo) + fallback local
@@ -117,6 +142,10 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
         Route::get('relatorio/top-albuns', [Painel\RelatorioController::class, 'topAlbuns'])->name('relatorio.top.albuns');
 
         // Assinatura — plano ativo + histórico + renovação
+        Route::get('saques', [Painel\SaquesController::class, 'index'])->name('saques.index');
+        Route::get('saques/data', [Painel\SaquesController::class, 'data'])->name('saques.data');
+        Route::post('saques', [Painel\SaquesController::class, 'store'])->name('saques.store');
+
         Route::get('assinatura', [Painel\AssinaturaController::class, 'index'])->name('assinatura.index');
         Route::post('assinatura/assinar/{plano}', [Painel\AssinaturaController::class, 'assinar'])->name('assinatura.assinar');
         Route::post('assinatura/renovar', [Painel\AssinaturaController::class, 'renovar'])->name('assinatura.renovar');

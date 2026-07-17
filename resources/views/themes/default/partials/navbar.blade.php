@@ -34,6 +34,7 @@
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.configuracoes') ? 'active' : '' }}" href="{{ route('painel.configuracoes.index') }}">Configurações</a></li>
                 @else
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.relatorio') ? 'active' : '' }}" href="{{ route('painel.relatorio.index') }}">Relatório</a></li>
+                    <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.saques') ? 'active' : '' }}" href="{{ route('painel.saques.index') }}">Saques</a></li>
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.assinatura') ? 'active' : '' }}" href="{{ route('painel.assinatura.index') }}">Assinatura</a></li>
                 @endif
             </ul>

@@ -197,4 +197,17 @@ class User extends Authenticatable
     {
         return $query->where('role', self::ROLE_CLIENTE);
     }
+
+    protected static function booted(): void
+    {
+        // Cascade "PHP" — dispara os hooks de Evento/Album/Video que limpam
+        // arquivos no disco. Sem isso, o cascadeOnDelete do FK apagava as
+        // linhas mas deixava os arquivos órfãos (e a cota inconsistente).
+        static::deleting(function (User $user) {
+            $user->eventos()->get()->each->delete();
+            // Álbuns sem evento (edge case) e vídeos soltos:
+            $user->albuns()->get()->each->delete();
+            $user->videos()->get()->each->delete();
+        });
+    }
 }

@@ -93,7 +93,9 @@ class LogsController extends Controller
             $query->where('nivel', $filters['nivel']);
         }
         if (! empty($filters['evento'])) {
-            $query->where('evento', 'like', $filters['evento'] . '%');
+            // Escapa %/_ do LIKE pra que "video." não vire wildcard sql.
+            $prefixo = addcslashes((string) $filters['evento'], '%_\\');
+            $query->where('evento', 'like', $prefixo . '%');
         }
 
         return DataTables::eloquent($query)
@@ -134,7 +136,9 @@ class LogsController extends Controller
 
     public function pipelineLimpar(): JsonResponse
     {
-        LogProcessamento::truncate();
+        // delete() em vez de truncate(): preserva AUTO_INCREMENT e roda dentro
+        // de transaction, permitindo rollback e coexistindo com writes concorrentes.
+        LogProcessamento::query()->delete();
         return response()->json(['message' => 'Logs do pipeline apagados.']);
     }
 

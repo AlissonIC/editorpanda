@@ -91,6 +91,20 @@
                     <button type="button" class="btn btn-sm btn-link" id="pv-bulk-clear">
                         <i class="bi bi-x-circle me-1"></i>Limpar
                     </button>
+                    <div class="dropdown">
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="dropdown"
+                                id="pv-bulk-download"
+                                data-zip-url="{{ route('painel.albuns.download-zip', $album) }}"
+                                data-merge-url="{{ route('painel.albuns.merge.store', $album) }}">
+                            <i class="bi bi-download me-1"></i>Baixar selecionados
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item js-bulk-zip" data-tipo="processado" href="#"><i class="bi bi-file-zip me-2"></i>ZIP dos processados</a></li>
+                            <li><a class="dropdown-item js-bulk-zip" data-tipo="original" href="#"><i class="bi bi-file-zip me-2"></i>ZIP dos originais</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item js-bulk-merge" href="#"><i class="bi bi-collection-play me-2"></i>Mesclar em 1 vídeo (async)</a></li>
+                        </ul>
+                    </div>
                     <button type="button" class="btn btn-sm btn-danger" id="pv-bulk-delete">
                         <i class="bi bi-trash me-1"></i>Remover selecionados
                     </button>

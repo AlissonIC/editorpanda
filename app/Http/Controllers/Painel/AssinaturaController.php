@@ -45,6 +45,10 @@ class AssinaturaController extends Controller
         $user = auth()->user();
 
         $novaAssinatura = DB::transaction(function () use ($user, $plano) {
+            // Lock no user primeiro: dois POSTs concorrentes iriam ambos passar
+            // no check de "não tem ativa" e criar 2 assinaturas.
+            \App\Models\User::whereKey($user->id)->lockForUpdate()->first();
+
             // Cancela ativa anterior (troca de plano)
             $ativa = $user->assinaturas()->where('status', Assinatura::STATUS_ATIVA)->lockForUpdate()->first();
             if ($ativa) {

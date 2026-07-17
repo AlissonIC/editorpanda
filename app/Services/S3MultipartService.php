@@ -149,20 +149,39 @@ class S3MultipartService
         }
     }
 
-    /** Lista partes já enviadas no S3 (verificação server-side ao completar). */
+    /**
+     * Lista partes já enviadas no S3 (verificação server-side ao completar).
+     * Pagina com PartNumberMarker — S3 devolve no máximo 1000 partes por chamada,
+     * mas o app aceita até 10_000 partes.
+     */
     public function listUploadedParts(string $key, string $uploadId): array
     {
-        $result = $this->client->listParts([
-            'Bucket' => $this->bucket,
-            'Key' => $key,
-            'UploadId' => $uploadId,
-        ]);
+        $partes = [];
+        $marker = 0;
 
-        return array_map(fn ($p) => [
-            'PartNumber' => (int) $p['PartNumber'],
-            'ETag' => (string) $p['ETag'],
-            'Size' => (int) ($p['Size'] ?? 0),
-        ], $result->get('Parts') ?? []);
+        do {
+            $params = [
+                'Bucket' => $this->bucket,
+                'Key' => $key,
+                'UploadId' => $uploadId,
+            ];
+            if ($marker > 0) $params['PartNumberMarker'] = $marker;
+
+            $result = $this->client->listParts($params);
+
+            foreach ($result->get('Parts') ?? [] as $p) {
+                $partes[] = [
+                    'PartNumber' => (int) $p['PartNumber'],
+                    'ETag' => (string) $p['ETag'],
+                    'Size' => (int) ($p['Size'] ?? 0),
+                ];
+            }
+
+            $truncado = $result->get('IsTruncated');
+            $marker = (int) ($result->get('NextPartNumberMarker') ?? 0);
+        } while ($truncado && $marker > 0);
+
+        return $partes;
     }
 
     public function deleteObject(string $key): void

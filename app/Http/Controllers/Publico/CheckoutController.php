@@ -7,6 +7,7 @@ use App\Models\Album;
 use App\Models\Comprador;
 use App\Models\Pedido;
 use App\Models\PedidoItem;
+use App\Models\User;
 use App\Notifications\CompraFinalizadaNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,22 +28,47 @@ class CheckoutController extends Controller
             'video_ids.*' => ['integer'],
         ]);
 
-        // Dedup — impede pagar N vezes o mesmo vídeo
+        // Dedup dentro do request
         $data['video_ids'] = array_values(array_unique(array_filter($data['video_ids'])));
 
-        // Só vídeos VENDÁVEIS (processando ou concluído). Status "pendente" = upload não confirmado,
-        // "enviando" = ainda subindo, "falhou" = quebrado — nenhum é vendável.
+        // Só vídeos ENTREGÁVEIS (processados). Vender "processando" é arriscado —
+        // se falhar, comprador pagou por nada e não há fluxo de refund.
         $videos = $album->videos()
             ->whereIn('id', $data['video_ids'])
-            ->whereIn('status', ['processando', 'concluido'])
+            ->where('status', 'concluido')
             ->get(['id', 'album_id']);
 
         abort_if($videos->isEmpty(), 422, 'Nenhum vídeo válido para compra.');
 
-        $pedido = DB::transaction(function () use ($album, $data, $videos) {
+        // Dedup contra histórico: se o email já pagou aquele vídeo antes,
+        // remove da compra. Evita double-charge quando o comprador esquece
+        // que já comprou ou reenvia o form.
+        $email = strtolower(trim($data['email']));
+        $compradorExistente = Comprador::where('email', $email)->first();
+        if ($compradorExistente) {
+            $jaPagos = DB::table('pedido_itens')
+                ->join('pedidos', 'pedidos.id', '=', 'pedido_itens.pedido_id')
+                ->where('pedidos.comprador_id', $compradorExistente->id)
+                ->where('pedidos.status', 'pago')
+                ->whereIn('pedido_itens.video_id', $videos->pluck('id'))
+                ->pluck('pedido_itens.video_id')
+                ->all();
+            if ($jaPagos) {
+                $videos = $videos->reject(fn ($v) => in_array($v->id, $jaPagos, true))->values();
+                abort_if($videos->isEmpty(), 422,
+                    'Todos os vídeos selecionados já foram comprados por este e-mail.');
+            }
+        }
+
+        $pedido = DB::transaction(function () use ($album, $data, $videos, $email) {
             // ATENÇÃO: preço vem SEMPRE do banco. Nunca do request. Snapshot com lock
-            // pra que troca de plano/preço durante a compra não crie inconsistência.
+            // do álbum + evento para não pegar leitura stale se o vendedor
+            // alterar preço no meio da compra.
             $albumLocked = Album::whereKey($album->id)->lockForUpdate()->with('evento')->first();
+            if ($albumLocked->evento_id) {
+                \App\Models\Evento::whereKey($albumLocked->evento_id)->lockForUpdate()->first();
+                $albumLocked->load('evento');
+            }
             $preco = $albumLocked->precoEfetivoPorVideo();
             $total = round($preco * $videos->count(), 2);
             $ehGratis = $albumLocked->ehGratuito();
@@ -54,7 +80,6 @@ class CheckoutController extends Controller
             }
 
             // Comprador: firstOrCreate por email (unique constraint garante consistência mesmo em race)
-            $email = strtolower(trim($data['email']));
             $comprador = Comprador::firstOrCreate(
                 ['email' => $email],
                 ['nome' => $data['nome'], 'whatsapp' => $data['whatsapp'] ?? null]
@@ -90,12 +115,19 @@ class CheckoutController extends Controller
             }
 
             // Credita saldo apenas se houve receita real (total > 0).
-            // Grátis não credita saldo pro vendedor.
+            // Grátis não credita nada. Taxa do plano do vendedor é descontada
+            // aqui — a diferença fica pra plataforma (não gravada em tabela ainda,
+            // mas o total do pedido registra a receita bruta pra relatórios).
             if ($total > 0) {
-                $totalCents = (int) round($total * 100);
-                DB::table('users')->where('id', $album->user_id)->update([
-                    'saldo_disponivel' => DB::raw("saldo_disponivel + ({$totalCents} / 100)"),
-                ]);
+                $vendedor = User::whereKey($album->user_id)->lockForUpdate()->with('plano')->first();
+                $taxa = (float) ($vendedor?->plano?->taxa_por_venda ?? 0);
+                $credito = round($total * (1 - $taxa / 100), 2);
+                $creditoCents = (int) round($credito * 100);
+                if ($creditoCents > 0) {
+                    DB::table('users')->where('id', $vendedor->id)->update([
+                        'saldo_disponivel' => DB::raw("saldo_disponivel + ({$creditoCents} / 100)"),
+                    ]);
+                }
             }
 
             return $pedido;
