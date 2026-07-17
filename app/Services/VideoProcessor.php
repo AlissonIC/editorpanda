@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Album;
+use App\Models\LogProcessamento;
 use App\Models\Video;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -260,12 +261,16 @@ class VideoProcessor
     {
         $m = 40;
         return match ($pos) {
-            'top-left'     => [(string) $m, (string) $m],
-            'top-right'    => ["W-w-{$m}", (string) $m],
-            'bottom-left'  => [(string) $m, "H-h-{$m}"],
-            'bottom-right' => ["W-w-{$m}", "H-h-{$m}"],
-            'center'       => ['(W-w)/2', '(H-h)/2'],
-            default        => ["W-w-{$m}", (string) $m],
+            'top-left'      => [(string) $m,        (string) $m],
+            'top-center'    => ['(W-w)/2',          (string) $m],
+            'top-right'     => ["W-w-{$m}",         (string) $m],
+            'middle-left'   => [(string) $m,        '(H-h)/2'],
+            'center'        => ['(W-w)/2',          '(H-h)/2'],
+            'middle-right'  => ["W-w-{$m}",         '(H-h)/2'],
+            'bottom-left'   => [(string) $m,        "H-h-{$m}"],
+            'bottom-center' => ['(W-w)/2',          "H-h-{$m}"],
+            'bottom-right'  => ["W-w-{$m}",         "H-h-{$m}"],
+            default         => ["W-w-{$m}",         (string) $m],
         };
     }
 
@@ -275,16 +280,25 @@ class VideoProcessor
         $process->setTimeout(self::TIMEOUT_SECONDS);
         $process->run();
         if (! $process->isSuccessful()) {
-            throw new RuntimeException('ffmpeg falhou: ' . substr($process->getErrorOutput() ?: 'sem stderr', 0, 500));
+            $stderr = $process->getErrorOutput() ?: 'sem stderr';
+            // Guarda o stderr COMPLETO no log em DB (o erro_msg do vídeo é truncado)
+            LogProcessamento::error('ffmpeg.error', 'ffmpeg terminou com erro', [
+                'exit_code' => $process->getExitCode(),
+                'stderr' => mb_substr($stderr, 0, 4000),
+                'stderr_tail' => mb_substr($stderr, -1000),
+            ]);
+            throw new RuntimeException('ffmpeg falhou: ' . substr($stderr, 0, 500));
         }
 
         // Sanity check: o último argumento é o path de saída
         $outputPath = end($cmd);
         if (! is_string($outputPath) || ! is_file($outputPath)) {
+            LogProcessamento::error('ffmpeg.no_output', 'ffmpeg exit 0 sem arquivo de saída', ['output_path' => (string) $outputPath]);
             throw new RuntimeException('ffmpeg terminou com exit 0 mas não gerou o arquivo de saída.');
         }
         $size = filesize($outputPath);
         if ($size === false || $size < 1024) {
+            LogProcessamento::error('ffmpeg.output_vazio', "Saída ffmpeg com {$size} bytes — provável erro silencioso", ['tamanho' => $size]);
             throw new RuntimeException("ffmpeg gerou arquivo vazio ou minúsculo ({$size} bytes) — provável erro silencioso.");
         }
     }

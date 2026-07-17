@@ -36,6 +36,12 @@ class EventosController extends Controller
         }
 
         return DataTables::eloquent($query)
+            ->editColumn('nome', function ($e) {
+                if (auth()->user()->isAdmin()) {
+                    return e($e->nome);
+                }
+                return '<a href="' . route('painel.eventos.edit', $e->id) . '" class="fw-semibold text-decoration-none link-row">' . e($e->nome) . '</a>';
+            })
             ->addColumn('cliente', fn ($e) => $e->user?->nome ?? '—')
             ->addColumn('localizacao', fn ($e) => trim(($e->localizacao_cidade ?: '') . ($e->localizacao_estado ? ' / ' . $e->localizacao_estado : '')) ?: '—')
             ->editColumn('data', fn ($e) => $e->data?->format('d/m/Y') ?? '—')
@@ -45,11 +51,12 @@ class EventosController extends Controller
                     return '<button class="btn btn-sm btn-outline-danger js-delete" data-id="' . $e->id . '"><i class="bi bi-trash"></i></button>';
                 }
                 $shareUrl = route('publico.evento.show', $e->slug);
+                $editUrl = route('painel.eventos.edit', $e->id);
                 return '<button class="btn btn-sm btn-outline-secondary me-1 js-share" data-url="' . e($shareUrl) . '" data-titulo="' . e($e->nome) . '" title="Compartilhar"><i class="bi bi-share"></i></button>'
-                    . '<button class="btn btn-sm btn-outline-primary me-1 js-edit" data-id="' . $e->id . '"><i class="bi bi-pencil"></i></button>'
+                    . '<a href="' . $editUrl . '" class="btn btn-sm btn-outline-primary me-1" title="Editar"><i class="bi bi-pencil"></i></a>'
                     . '<button class="btn btn-sm btn-outline-danger js-delete" data-id="' . $e->id . '"><i class="bi bi-trash"></i></button>';
             })
-            ->rawColumns(['status', 'acoes'])
+            ->rawColumns(['nome', 'status', 'acoes'])
             ->make(true);
     }
 
@@ -69,8 +76,27 @@ class EventosController extends Controller
 
         $payload = $evento->toArray();
         $payload['logo_url'] = $evento->logo_url;
+        $payload['capa_url'] = $evento->capa_url;
 
         return response()->json($payload);
+    }
+
+    /**
+     * Página de edição completa — substitui o modal antigo.
+     * Mostra tudo do evento + álbuns vinculados + botão pra criar novo álbum.
+     */
+    public function edit(Evento $evento): View
+    {
+        $this->authorize($evento);
+        abort_if(auth()->user()->isAdmin(), 403, 'Admin não edita eventos.');
+
+        $evento->load(['albuns' => function ($q) {
+            $q->withCount('videos')->orderBy('nome');
+        }]);
+
+        return view('pages.painel.eventos-editar', [
+            'evento' => $evento,
+        ]);
     }
 
     public function update(Request $request, Evento $evento): JsonResponse
@@ -167,6 +193,7 @@ class EventosController extends Controller
     {
         return $request->validate([
             'nome' => ['required', 'string', 'max:255'],
+            'descricao' => ['nullable', 'string', 'max:5000'],
             'localizacao_cidade' => ['nullable', 'string', 'max:120'],
             'localizacao_estado' => ['nullable', 'string', 'max:100'],
             'data' => ['nullable', 'date'],
@@ -177,6 +204,60 @@ class EventosController extends Controller
             'gradiente_habilitado' => ['nullable', 'boolean'],
             'rosto_centralizar' => ['nullable', 'boolean'],
         ]);
+    }
+
+    // ---------- Capa (foto principal do evento) ----------
+
+    public function uploadCapa(Request $request, Evento $evento): JsonResponse
+    {
+        $this->authorize($evento);
+        abort_if(auth()->user()->isAdmin(), 403);
+
+        $request->validate([
+            'capa' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:4096'], // 4 MB
+        ]);
+
+        $disco = Configuracao::storageDisk();
+
+        // Remove antiga com verificação
+        if ($evento->capa_path) {
+            \App\Support\StorageCleanup::deleteAndVerify(
+                $evento->capa_disk ?: 'local',
+                $evento->capa_path,
+                'evento_capa_replace',
+            );
+        }
+
+        $ext = strtolower($request->file('capa')->extension() ?: 'jpg');
+        $ext = preg_replace('/[^a-z0-9]/', '', $ext) ?: 'jpg';
+        $path = sprintf('capas-eventos/%d/evento-%d-%s.%s',
+            auth()->id(), $evento->id, Str::random(8), $ext);
+
+        $request->file('capa')->storeAs(dirname($path), basename($path), $disco);
+
+        $evento->update(['capa_path' => $path, 'capa_disk' => $disco]);
+
+        return response()->json([
+            'capa_url' => $evento->fresh()->capa_url,
+            'message' => 'Capa enviada.',
+        ]);
+    }
+
+    public function deleteCapa(Evento $evento): JsonResponse
+    {
+        $this->authorize($evento);
+        abort_if(auth()->user()->isAdmin(), 403);
+
+        if ($evento->capa_path) {
+            \App\Support\StorageCleanup::deleteAndVerify(
+                $evento->capa_disk ?: 'local',
+                $evento->capa_path,
+                'evento_capa_delete',
+            );
+            $evento->update(['capa_path' => null, 'capa_disk' => null]);
+        }
+
+        return response()->json(['message' => 'Capa removida.']);
     }
 
     public function destroy(Evento $evento): JsonResponse

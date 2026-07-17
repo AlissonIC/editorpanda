@@ -19,6 +19,7 @@ Route::get('/', [PublicController::class, 'home'])->name('home');
 Route::name('publico.')->group(function () {
     // Prefixo /e/{uuid} = evento; /a/{uuid} = álbum
     Route::get('/e/{evento:slug}', [Publico\EventoPublicoController::class, 'show'])->name('evento.show');
+    Route::get('/e/{evento:slug}/capa', [Publico\EventoPublicoController::class, 'servirCapa'])->name('evento.capa');
     Route::get('/a/{album:slug}', [Publico\AlbumPublicoController::class, 'show'])->name('album.show');
     // Thumbnails de vídeos em álbuns públicos — sem autenticação
     Route::get('/v/{video}/thumb', [Publico\AlbumPublicoController::class, 'servirThumbnail'])->name('video.thumb');
@@ -67,16 +68,20 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
     Route::get('eventos', [Painel\EventosController::class, 'index'])->name('eventos.index');
     Route::get('eventos/data', [Painel\EventosController::class, 'data'])->name('eventos.data');
     Route::post('eventos', [Painel\EventosController::class, 'store'])->name('eventos.store');
+    Route::get('eventos/{evento}/editar', [Painel\EventosController::class, 'edit'])->name('eventos.edit');
     Route::get('eventos/{evento}', [Painel\EventosController::class, 'show'])->name('eventos.show');
     Route::put('eventos/{evento}', [Painel\EventosController::class, 'update'])->name('eventos.update');
     Route::delete('eventos/{evento}', [Painel\EventosController::class, 'destroy'])->name('eventos.destroy');
     Route::post('eventos/{evento}/logo', [Painel\EventosController::class, 'uploadLogo'])->name('eventos.logo.upload');
     Route::delete('eventos/{evento}/logo', [Painel\EventosController::class, 'deleteLogo'])->name('eventos.logo.delete');
     Route::get('eventos/{evento}/logo', [Painel\EventosController::class, 'serveLogo'])->name('eventos.logo.serve');
+    Route::post('eventos/{evento}/capa', [Painel\EventosController::class, 'uploadCapa'])->name('eventos.capa.upload');
+    Route::delete('eventos/{evento}/capa', [Painel\EventosController::class, 'deleteCapa'])->name('eventos.capa.delete');
 
     Route::get('albuns', [Painel\AlbunsController::class, 'index'])->name('albuns.index');
     Route::get('albuns/data', [Painel\AlbunsController::class, 'data'])->name('albuns.data');
     Route::post('albuns', [Painel\AlbunsController::class, 'store'])->name('albuns.store');
+    Route::get('albuns/{album}/editar', [Painel\AlbunsController::class, 'edit'])->name('albuns.edit');
     Route::get('albuns/{album}', [Painel\AlbunsController::class, 'show'])->name('albuns.show');
     Route::put('albuns/{album}', [Painel\AlbunsController::class, 'update'])->name('albuns.update');
     Route::delete('albuns/{album}', [Painel\AlbunsController::class, 'destroy'])->name('albuns.destroy');
@@ -139,6 +144,19 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
         Route::get('processamento', [Admin\ProcessamentoController::class, 'index'])->name('processamento.index');
         Route::get('processamento/data', [Admin\ProcessamentoController::class, 'data'])->name('processamento.data');
         Route::post('processamento/{video}/reprocessar', [Admin\ProcessamentoController::class, 'reprocessar'])->name('processamento.reprocessar');
+
+        Route::get('logs', [Admin\LogsController::class, 'index'])->name('logs.index');
+        Route::get('logs/pipeline', [Admin\LogsController::class, 'pipeline'])->name('logs.pipeline');
+        Route::get('logs/pipeline/{log}', [Admin\LogsController::class, 'pipelineShow'])->name('logs.pipeline.show');
+        Route::post('logs/pipeline/limpar', [Admin\LogsController::class, 'pipelineLimpar'])->name('logs.pipeline.limpar');
+        Route::get('logs/videos-erro', [Admin\LogsController::class, 'videosErro'])->name('logs.videos-erro');
+        Route::get('logs/videos-travados', [Admin\LogsController::class, 'videosTravados'])->name('logs.videos-travados');
+        Route::post('logs/videos-travados/{video}/resetar', [Admin\LogsController::class, 'resetarVideo'])->name('logs.videos-travados.resetar');
+        Route::get('logs/failed-jobs', [Admin\LogsController::class, 'failedJobs'])->name('logs.failed-jobs');
+        Route::get('logs/failed-jobs/{id}', [Admin\LogsController::class, 'failedJobShow'])->name('logs.failed-jobs.show');
+        Route::delete('logs/failed-jobs/{id}', [Admin\LogsController::class, 'failedJobDelete'])->name('logs.failed-jobs.delete');
+        Route::get('logs/laravel', [Admin\LogsController::class, 'laravelLog'])->name('logs.laravel');
+        Route::post('logs/laravel/limpar', [Admin\LogsController::class, 'laravelLogLimpar'])->name('logs.laravel.limpar');
 
         Route::get('configuracoes', [Admin\ConfiguracoesController::class, 'index'])->name('configuracoes.index');
         Route::put('configuracoes', [Admin\ConfiguracoesController::class, 'update'])->name('configuracoes.update');

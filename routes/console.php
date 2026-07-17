@@ -37,6 +37,28 @@ Schedule::command('panda:limpar-orfaos')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Retenção de logs — 7 dias
+// - failed_jobs: prune built-in do Laravel (--hours=168 = 7d)
+// - arquivos_orfaos resolvidos há > 7 dias somem
+// - laravel-YYYY-MM-DD.log: rotação automática já é feita pelo channel `daily`
+//   com LOG_DAILY_DAYS=7 (config/logging.php)
+Schedule::command('queue:prune-failed --hours=168')
+    ->dailyAt('03:30')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+Schedule::call(function () {
+    \Illuminate\Support\Facades\DB::table('arquivos_orfaos')
+        ->where('updated_at', '<', now()->subDays(7))
+        ->whereNull('ultimo_erro')
+        ->delete();
+})->dailyAt('03:35')->name('panda:prune-orfaos-resolvidos');
+
+// Logs do pipeline de processamento: retenção 7 dias
+Schedule::call(function () {
+    \App\Models\LogProcessamento::where('created_at', '<', now()->subDays(7))->delete();
+})->dailyAt('03:40')->name('panda:prune-logs-processamento');
+
 // Scan reverso é mais pesado — só uma vez por semana (domingo às 04:00)
 Schedule::command('panda:scan-armazenamento --disk=local --apagar')
     ->weeklyOn(0, '04:00')

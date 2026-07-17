@@ -42,23 +42,33 @@ class AlbunsController extends Controller
             $query->where('evento_id', $filters['evento_id']);
         }
 
+        $isAdmin = auth()->user()->isAdmin();
+
         return DataTables::eloquent($query)
+            ->editColumn('nome', function ($a) use ($isAdmin) {
+                if ($isAdmin) return e($a->nome);
+                return '<a href="' . route('painel.albuns.edit', $a->id) . '" class="fw-semibold text-decoration-none link-row">' . e($a->nome) . '</a>';
+            })
             ->addColumn('cliente', fn ($a) => $a->user?->nome ?? '—')
-            ->addColumn('evento', fn ($a) => $a->evento?->nome ?? '—')
+            ->addColumn('evento', function ($a) use ($isAdmin) {
+                if (! $a->evento) return '—';
+                if ($isAdmin) return e($a->evento->nome);
+                return '<a href="' . route('painel.eventos.edit', $a->evento->id) . '" class="text-decoration-none link-row-secondary">' . e($a->evento->nome) . '</a>';
+            })
             ->editColumn('preco', fn ($a) => 'R$ ' . number_format((float) $a->preco, 2, ',', '.'))
             ->editColumn('status', fn ($a) => '<span class="status-badge ' . $a->status . '">' . ucfirst($a->status) . '</span>')
             ->editColumn('created_at', fn ($a) => $a->created_at?->format('d/m/Y'))
-            ->addColumn('acoes', function ($a) {
-                if (auth()->user()->isAdmin()) {
+            ->addColumn('acoes', function ($a) use ($isAdmin) {
+                if ($isAdmin) {
                     return '<button class="btn btn-sm btn-outline-danger js-delete" data-id="' . $a->id . '"><i class="bi bi-trash"></i></button>';
                 }
                 $shareUrl = route('publico.album.show', $a->slug);
                 return '<a href="' . route('painel.albuns.enviar', $a) . '" class="btn btn-sm btn-outline-secondary me-1" title="Enviar vídeos"><i class="bi bi-upload"></i></a>'
                     . '<button class="btn btn-sm btn-outline-secondary me-1 js-share" data-url="' . e($shareUrl) . '" data-titulo="' . e($a->nome) . '" title="Compartilhar"><i class="bi bi-share"></i></button>'
-                    . '<button class="btn btn-sm btn-outline-primary me-1 js-edit" data-id="' . $a->id . '"><i class="bi bi-pencil"></i></button>'
+                    . '<a href="' . route('painel.albuns.edit', $a->id) . '" class="btn btn-sm btn-outline-primary me-1" title="Editar"><i class="bi bi-pencil"></i></a>'
                     . '<button class="btn btn-sm btn-outline-danger js-delete" data-id="' . $a->id . '"><i class="bi bi-trash"></i></button>';
             })
-            ->rawColumns(['status', 'acoes'])
+            ->rawColumns(['nome', 'evento', 'status', 'acoes'])
             ->make(true);
     }
 
@@ -93,6 +103,23 @@ class AlbunsController extends Controller
         $this->authorize($album);
 
         return response()->json($album);
+    }
+
+    /**
+     * Página de edição completa — permite alterar dados básicos + trocar o evento.
+     */
+    public function edit(Album $album): View
+    {
+        abort_if(auth()->user()->isAdmin(), 403, 'Admin não edita álbuns.');
+        $this->authorize($album);
+
+        $eventos = auth()->user()->eventos()
+            ->orderBy('nome')
+            ->get(['id', 'nome', 'preco_por_video']);
+
+        $album->load('evento:id,nome,preco_por_video');
+
+        return view('pages.painel.albuns-editar', compact('album', 'eventos'));
     }
 
     public function update(Request $request, Album $album): JsonResponse
@@ -138,10 +165,9 @@ class AlbunsController extends Controller
         $this->authorize($album);
 
         $album->load('evento:id,nome');
-        $disco = Configuracao::storageDisk();
         $temPlanoAtivo = auth()->user()->temPlanoAtivo();
 
-        return view('pages.painel.albuns-upload', compact('album', 'disco', 'temPlanoAtivo'));
+        return view('pages.painel.albuns-upload', compact('album', 'temPlanoAtivo'));
     }
 
     public function uploadVideo(Request $request, Album $album): JsonResponse
@@ -150,7 +176,8 @@ class AlbunsController extends Controller
         $this->authorize($album);
 
         $request->validate([
-            'arquivo' => ['required', 'file', 'mimetypes:video/mp4,video/quicktime,video/x-matroska,video/webm', 'max:512000'],
+            // 300 MB (307200 KB)
+            'arquivo' => ['required', 'file', 'mimetypes:video/mp4,video/quicktime,video/x-matroska,video/webm', 'max:307200'],
         ]);
 
         $tamanho = (int) $request->file('arquivo')->getSize();

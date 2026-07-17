@@ -3,7 +3,7 @@ import { UploadTask } from '../../lib/upload-task';
 
 const MAX_ARQUIVOS_PARALELOS = 2;
 const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm'];
-const MAX_BYTES = 20 * 1024 * 1024 * 1024;
+const MAX_BYTES = 300 * 1024 * 1024; // 300 MB por arquivo
 const VIEW_KEY = 'panda-videos-view';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -196,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
         li.innerHTML = `
             <div class="pv-check-cell"></div>
             <div class="pv-thumb pv-thumb-placeholder"><i class="bi bi-film"></i></div>
-            <div class="pv-body">
+            <div class="pv-info">
                 <div class="pv-name" title="${escapeHtml(item.file.name)}">${escapeHtml(item.file.name)}</div>
                 <div class="pv-meta">
                     <span class="pv-size">${humanSize(item.file.size)}</span>
@@ -297,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <input type="checkbox" class="form-check-input pv-check" ${selectedIds.has(v.id) ? 'checked' : ''}>
             </div>
             ${thumb}
-            <div class="pv-body">
+            <div class="pv-info">
                 <div class="pv-name" title="${escapeHtml(v.nome)}">${escapeHtml(v.nome)}</div>
                 <div class="pv-meta">
                     <span>${v.tamanho_humano}</span>

@@ -11,7 +11,11 @@ class Evento extends Model
 {
     protected $table = 'eventos';
 
-    public const POSICOES_LOGO = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'];
+    public const POSICOES_LOGO = [
+        'top-left',    'top-center',    'top-right',
+        'middle-left', 'center',        'middle-right',
+        'bottom-left', 'bottom-center', 'bottom-right',
+    ];
 
     protected $fillable = [
         'user_id',
@@ -22,6 +26,9 @@ class Evento extends Model
         'data',
         'status',
         'preco_por_video',
+        'descricao',
+        'capa_path',
+        'capa_disk',
         'logo_path',
         'logo_disk',
         'logo_posicao',
@@ -70,6 +77,21 @@ class Evento extends Model
         }
     }
 
+    public function getCapaUrlAttribute(): ?string
+    {
+        if (! $this->capa_path) return null;
+        try {
+            return route('publico.evento.capa', $this->slug);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function ehGratuito(): bool
+    {
+        return (float) $this->preco_por_video <= 0;
+    }
+
     protected static function booted(): void
     {
         static::creating(function (Evento $evento) {
@@ -79,12 +101,19 @@ class Evento extends Model
         });
 
         static::deleting(function (Evento $evento) {
-            // Remove logo com verificação; falhas ficam na tabela de órfãos
+            // Remove logo e capa com verificação; falhas ficam na tabela de órfãos
             if ($evento->logo_path) {
                 \App\Support\StorageCleanup::deleteAndVerify(
                     $evento->logo_disk ?: 'local',
                     $evento->logo_path,
                     'evento_delete_logo',
+                );
+            }
+            if ($evento->capa_path) {
+                \App\Support\StorageCleanup::deleteAndVerify(
+                    $evento->capa_disk ?: 'local',
+                    $evento->capa_path,
+                    'evento_delete_capa',
                 );
             }
             $evento->albuns()->get()->each->delete();

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Publico;
 
 use App\Http\Controllers\Controller;
 use App\Models\Evento;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class EventoPublicoController extends Controller
@@ -24,5 +25,29 @@ class EventoPublicoController extends Controller
             'albuns' => $albuns,
             'precoEvento' => $evento->precoEfetivoPorVideo(),
         ]);
+    }
+
+    /**
+     * Serve a capa do evento.
+     *   - Público: só se evento ativo
+     *   - Dono/admin logado: sempre (permite preview no editor mesmo com evento inativo)
+     */
+    public function servirCapa(Evento $evento)
+    {
+        $liberado = $evento->status === 'ativo'
+            || (auth()->check() && (auth()->user()->isAdmin() || $evento->user_id === auth()->id()));
+        abort_unless($liberado, 404);
+        abort_unless($evento->capa_path, 404);
+
+        $disco = $evento->capa_disk ?: 'local';
+        if ($disco === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl($evento->capa_path, now()->addMinutes(15));
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+        return Storage::disk('local')->response($evento->capa_path);
     }
 }

@@ -7,9 +7,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const checkoutUrl = root.dataset.checkoutUrl;
     const preco = parseFloat(root.dataset.preco || '0');
+    const gratis = root.dataset.gratis === '1';
     const btn = document.getElementById('pv-checkout-btn');
     const selCount = document.getElementById('pv-sel-count');
-    const totalEl = document.getElementById('pv-total');
+    const totalEl = document.getElementById('pv-total'); // pode ser null se gratis
     const form = document.getElementById('pv-checkout-form');
     const whats = form.querySelector('[name="whatsapp"]');
     if (whats) bindPhone(whats);
@@ -21,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const qtd = marcados.length;
         const total = qtd * preco;
         selCount.textContent = qtd;
-        totalEl.textContent = brl(total);
+        if (totalEl) totalEl.textContent = brl(total);
         btn.disabled = qtd === 0;
 
         marcados.forEach((cb) => cb.closest('.pv-video-card').classList.add('is-selected'));
@@ -39,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         btn.disabled = true;
         const original = btn.textContent;
-        btn.textContent = 'Processando…';
+        btn.textContent = gratis ? 'Enviando…' : 'Processando…';
 
         const ids = [...root.querySelectorAll('.pv-video-check:checked')].map((c) => Number(c.value));
         const payload = {

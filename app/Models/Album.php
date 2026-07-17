@@ -42,6 +42,11 @@ class Album extends Model
         return $this->evento?->precoEfetivoPorVideo() ?? 0.0;
     }
 
+    public function ehGratuito(): bool
+    {
+        return $this->precoEfetivoPorVideo() <= 0;
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

@@ -337,7 +337,26 @@ body {
 .pv-hero {
     background: #fff;
     border-bottom: 1px solid #eef0f3;
+
+    &.pv-hero-capa {
+        background-size: cover;
+        background-position: center;
+        border-bottom: none;
+    }
 }
+
+.pv-album-gratis {
+    position: absolute;
+    top: 0.5rem; left: 0.5rem;
+    background: #22c55e;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.pv-album-cover { position: relative; }
 .pv-hero-logo {
     width: 84px; height: 84px;
     object-fit: contain;
@@ -472,8 +491,215 @@ body {
 }
 
 /* ========================================================
+   EVENTO — capa + mini-card de álbum na página de edição
+   ======================================================== */
+.ev-capa-preview {
+    aspect-ratio: 16 / 9;
+    background: #eef1f6 center/cover no-repeat;
+    border: 1px dashed #d1d5db;
+    border-radius: 0.6rem;
+    display: flex; align-items: center; justify-content: center;
+    color: #9ca3af;
+    font-size: 2.5rem;
+    &.has-capa {
+        border-style: solid;
+        border-color: #d5cffc;
+        color: transparent;
+    }
+}
+
+.album-mini-card {
+    background: #fff;
+    border: 1px solid #eef0f3;
+    border-radius: 0.75rem;
+    padding: 1rem;
+    height: 100%;
+    transition: box-shadow .15s ease, border-color .15s ease;
+    &:hover {
+        border-color: #d5cffc;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.06);
+    }
+}
+
+/* ========================================================
+   REELS PREVIEW — celular fake mostrando o processamento
+   ======================================================== */
+.reels-phone {
+    aspect-ratio: 9 / 19.5;
+    background: #0f172a;
+    border-radius: 2.2rem;
+    padding: 0.55rem;
+    box-shadow:
+        0 12px 32px rgba(15, 23, 42, 0.25),
+        0 0 0 2px #1e293b,
+        inset 0 0 0 2px #334155;
+    position: relative;
+    max-width: 240px;
+    width: 100%;
+    display: flex;             // permite que a screen preencha toda a altura interna
+    flex-direction: column;
+}
+.reels-phone-notch {
+    position: absolute;
+    top: 1rem; left: 50%;
+    transform: translateX(-50%);
+    width: 30%;
+    height: 1.2rem;
+    background: #000;
+    border-radius: 1rem;
+    z-index: 5;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+}
+.reels-phone-indicator {
+    position: absolute;
+    bottom: 0.4rem; left: 50%;
+    transform: translateX(-50%);
+    width: 30%;
+    height: 0.28rem;
+    background: rgba(255,255,255,0.85);
+    border-radius: 999px;
+    z-index: 5;
+}
+.reels-screen {
+    // Sem aspect-ratio fixo — a screen preenche 100% do espaço interno do celular
+    flex: 1;
+    width: 100%;
+    background-size: cover;
+    background-position: center;
+    border-radius: 1.6rem;
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.4);
+}
+
+/* --- Gradiente sobreposto (região do logo) --- */
+.reels-gradient {
+    position: absolute;
+    left: 0; right: 0;
+    height: 33.33%;
+    z-index: 2;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%);
+    top: 0;
+
+    &[data-position^="bottom"] {
+        top: auto; bottom: 0;
+        background: linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%);
+    }
+    &[data-position="center"],
+    &[data-position^="middle"] {
+        top: 33.33%; bottom: auto;
+        background: linear-gradient(180deg,
+                    rgba(0,0,0,0) 0%,
+                    rgba(0,0,0,0.55) 50%,
+                    rgba(0,0,0,0) 100%);
+    }
+}
+
+/* --- Logo overlay --- */
+.reels-logo {
+    position: absolute;
+    z-index: 3;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    pointer-events: none;
+    transition: all .2s ease;
+
+    // aspecto quadrado (mantém tamanho consistente do preview)
+    &::before {
+        content: '';
+        display: block;
+        padding-top: 100%;
+    }
+
+    &[data-position="top-left"]     { top: 4%;    left: 4%;    right: auto; bottom: auto; }
+    &[data-position="top-center"]   { top: 4%;    left: 50%;   right: auto; bottom: auto; transform: translateX(-50%); }
+    &[data-position="top-right"]    { top: 4%;    right: 4%;   left: auto;  bottom: auto; }
+    &[data-position="middle-left"]  { top: 50%;   left: 4%;    right: auto; bottom: auto; transform: translateY(-50%); }
+    &[data-position="center"]       { top: 50%;   left: 50%;   right: auto; bottom: auto; transform: translate(-50%, -50%); }
+    &[data-position="middle-right"] { top: 50%;   right: 4%;   left: auto;  bottom: auto; transform: translateY(-50%); }
+    &[data-position="bottom-left"]  { bottom: 8%; left: 4%;    right: auto; top: auto; }
+    &[data-position="bottom-center"]{ bottom: 8%; left: 50%;   right: auto; top: auto; transform: translateX(-50%); }
+    &[data-position="bottom-right"] { bottom: 8%; right: 4%;   left: auto;  top: auto; }
+}
+
+/* --- UI decorativa (like/comment/share) --- */
+.reels-ui-right {
+    position: absolute;
+    right: 0.5rem;
+    bottom: 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    z-index: 4;
+}
+.reels-ui-icon {
+    font-size: 1.1rem;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    text-align: center;
+    line-height: 1;
+}
+.reels-ui-bottom {
+    position: absolute;
+    left: 0.5rem; right: 3rem;
+    bottom: 0.6rem;
+    z-index: 4;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+.reels-avatar {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background-image: linear-gradient(135deg, #ec4899, #f59e0b);
+    border: 1.5px solid #fff;
+}
+.reels-caption {
+    font-size: 0.68rem;
+    opacity: 0.9;
+}
+
+/* ========================================================
    EVENTO — configuração de processamento (logo, posição, etc)
    ======================================================== */
+.ev-controls-box {
+    background: #fbfbfd;
+    border: 1px solid #eef0f3;
+    border-radius: 0.75rem;
+    padding: 0.9rem 1rem;
+    max-width: 360px;
+
+    .ev-controls-section {
+        padding: 0.75rem 0;
+        border-bottom: 1px dashed #e5e7eb;
+
+        &:first-child { padding-top: 0.25rem; }
+        &:last-child  { padding-bottom: 0.25rem; border-bottom: 0; }
+    }
+
+    .ev-controls-section-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #6b7280;
+        margin-bottom: 0.5rem;
+    }
+
+    .ev-controls-section--toggles {
+        background: #fff;
+        border: 1px solid #eef0f3;
+        border-radius: 0.5rem;
+        padding: 0.6rem 0.75rem;
+        margin-top: 0.25rem;
+    }
+
+    .pos-grid { max-width: 200px; }
+}
+
 .ev-logo-preview {
     width: 78px; height: 78px;
     border-radius: 0.6rem;
@@ -495,41 +721,47 @@ body {
 
 .pos-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: repeat(2, 1fr) auto;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
     grid-template-areas:
-        "tl tr"
-        "bl br"
-        "c c";
-    gap: 0.35rem;
+        "tl tc tr"
+        "ml c  mr"
+        "bl bc br";
+    gap: 0.3rem;
     padding: 0.4rem;
     background: #f7f8fa;
+    border: 1px solid #eef0f3;
     border-radius: 0.6rem;
-    aspect-ratio: 9 / 8;
-    max-width: 260px;
+    aspect-ratio: 1 / 1;
+    max-width: 220px;
 
     .pos-cell {
         border: 1px solid #e5e7eb;
         background: #fff;
         border-radius: 0.4rem;
         cursor: pointer;
-        transition: all .12s ease;
+        transition: border-color .12s ease, background .12s ease, transform .1s ease;
         position: relative;
+        padding: 0;
 
         &::after {
             content: '';
             position: absolute;
-            width: 22px; height: 12px;
-            background: #d1d5db;
+            width: 14px; height: 8px;
+            background: #cbd5e1;
             border-radius: 0.2rem;
             transition: background .12s ease;
         }
 
-        &[data-value="top-left"]     { grid-area: tl; &::after { top: 6px; left: 6px; } }
-        &[data-value="top-right"]    { grid-area: tr; &::after { top: 6px; right: 6px; } }
-        &[data-value="bottom-left"]  { grid-area: bl; &::after { bottom: 6px; left: 6px; } }
-        &[data-value="bottom-right"] { grid-area: br; &::after { bottom: 6px; right: 6px; } }
-        &[data-value="center"]       { grid-area: c;  &::after { top: 50%; left: 50%; transform: translate(-50%, -50%); } }
+        &[data-value="top-left"]      { grid-area: tl; &::after { top: 5px;    left: 5px; } }
+        &[data-value="top-center"]    { grid-area: tc; &::after { top: 5px;    left: 50%; transform: translateX(-50%); } }
+        &[data-value="top-right"]     { grid-area: tr; &::after { top: 5px;    right: 5px; } }
+        &[data-value="middle-left"]   { grid-area: ml; &::after { top: 50%;    left: 5px; transform: translateY(-50%); } }
+        &[data-value="center"]        { grid-area: c;  &::after { top: 50%;    left: 50%; transform: translate(-50%, -50%); } }
+        &[data-value="middle-right"]  { grid-area: mr; &::after { top: 50%;    right: 5px; transform: translateY(-50%); } }
+        &[data-value="bottom-left"]   { grid-area: bl; &::after { bottom: 5px; left: 5px; } }
+        &[data-value="bottom-center"] { grid-area: bc; &::after { bottom: 5px; left: 50%; transform: translateX(-50%); } }
+        &[data-value="bottom-right"]  { grid-area: br; &::after { bottom: 5px; right: 5px; } }
 
         &:hover { border-color: #a1a1aa; }
         &.is-active {
@@ -628,6 +860,7 @@ body {
 /* Container com scroll e altura máxima */
 .pv-scroll-area {
     max-height: 65vh;
+    min-height: 0;
     overflow-y: auto;
     padding-right: 0.35rem;
     scrollbar-width: thin;
@@ -683,10 +916,6 @@ body {
     font-size: 1.4rem;
 }
 .pv-item {
-    display: grid;
-    grid-template-columns: auto 56px 1fr auto auto;
-    gap: 0.9rem;
-    align-items: center;
     transition: background .1s ease;
 
     .pv-check-cell {
@@ -697,7 +926,7 @@ body {
     }
     .pv-check { cursor: pointer; }
 
-    .pv-body { min-width: 0; }
+    .pv-info { min-width: 0; }
     .pv-name {
         font-weight: 500;
         color: #1a1f36;
@@ -743,19 +972,37 @@ body {
     &.is-selected { background: rgba(115,103,240,0.05); }
 }
 
-/* -------- Modo LISTA -------- */
+/* -------- Modo LISTA (flexbox horizontal) -------- */
 .pv-view-list {
+    display: block;
+
     .pv-item {
-        padding: 0.7rem 0.35rem;
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        padding: 0.7rem 0.5rem;
         border-bottom: 1px solid #f3f4f6;
         border-radius: 0.35rem;
+        min-height: 0;
+
         &:last-child { border-bottom: 0; }
         &.is-selected {
             background: rgba(115,103,240,0.06);
             border-color: transparent;
         }
+
+        .pv-thumb,
+        .pv-thumb-placeholder {
+            width: 56px;
+            height: 56px;
+            flex-shrink: 0;
+        }
+        .pv-info { flex: 1 1 auto; }
+        .pv-badge,
+        .pv-actions { flex-shrink: 0; }
+
+        &.is-done .pv-progress { display: none; }
     }
-    .pv-item.is-done .pv-progress { display: none; }
 }
 
 /* -------- Modo GRID (Google Drive-like) -------- */
@@ -763,6 +1010,7 @@ body {
     display: grid !important;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 0.9rem;
+    align-content: start;
 
     .pv-item {
         display: flex;
@@ -819,7 +1067,7 @@ body {
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
             order: 2;
         }
-        .pv-body {
+        .pv-info {
             padding: 0.65rem 0.75rem 0.6rem;
             order: 3;
         }
@@ -1186,5 +1434,44 @@ body {
             &:hover { color: #fff; }
         }
     }
+}
+
+/* Links dentro de linhas de datatable — nome do registro clicável */
+.link-row {
+    color: #1f2937;
+    &:hover { color: #7367f0; text-decoration: underline !important; }
+}
+.link-row-secondary {
+    color: #4b5563;
+    &:hover { color: #7367f0; text-decoration: underline !important; }
+}
+
+/* ========================================================
+   ADMIN — Log viewer (tail do laravel.log e detalhes de jobs)
+   ======================================================== */
+.log-viewer {
+    background: #0f172a;
+    color: #cbd5e1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    padding: 0.9rem 1rem;
+    border-radius: 0.5rem;
+    max-height: 65vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+
+    .log-line {
+        display: block;
+    }
+    .log-line--head  { color: #94a3b8; }
+    .log-line--error { color: #fca5a5; background: rgba(239,68,68,0.08); }
+    .log-line--warn  { color: #fcd34d; }
+}
+.log-viewer--error {
+    background: #1a0f14;
+    color: #fca5a5;
 }
 

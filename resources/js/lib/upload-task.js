@@ -99,7 +99,8 @@ export class UploadTask {
 
     // -------- init --------
     async _init() {
-        const chunkSize = 10 * 1024 * 1024; // 10 MB
+        // 5 MB = mínimo aceito pelo S3 multipart e cabe em post_max_size mais restritivo
+        const chunkSize = 5 * 1024 * 1024;
         const totalParts = Math.max(1, Math.ceil(this.file.size / chunkSize));
 
         const { data } = await axios.post(this.albumInitUrl, {

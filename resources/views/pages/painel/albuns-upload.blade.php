@@ -49,7 +49,7 @@
                     <div class="dz-text">
                         <h5 class="fw-bold mb-1">Arraste vídeos ou clique para adicionar</h5>
                         <p class="small text-muted mb-0">
-                            MP4, MOV, MKV ou WEBM · envio em partes — até 20&nbsp;GB por arquivo
+                            MP4, MOV, MKV ou WEBM · envio em partes — até 300&nbsp;MB por arquivo
                         </p>
                     </div>
                     <button type="button" class="btn btn-dark-panda dz-btn" id="btn-select">
@@ -142,26 +142,6 @@
             <p class="small text-muted mt-2 mb-0" id="sw-hint">Consultando uso…</p>
         </div>
 
-        <div class="panda-card">
-            <h6 class="fw-bold mb-3">Destino do armazenamento</h6>
-            <div class="d-flex align-items-center gap-3">
-                <div class="storage-badge {{ $disco === 's3' ? 'bg-info-subtle text-info-emphasis' : 'bg-success-subtle text-success-emphasis' }}">
-                    <i class="bi {{ $disco === 's3' ? 'bi-cloud' : 'bi-hdd' }}"></i>
-                </div>
-                <div>
-                    <div class="fw-semibold">
-                        {{ $disco === 's3' ? 'Amazon S3' : 'Local' }}
-                    </div>
-                    <small class="text-muted">Disco vigente</small>
-                </div>
-            </div>
-
-            @if(auth()->user()->isAdmin())
-                <a href="{{ route('painel.configuracoes.index') }}" class="btn btn-link px-0 mt-2 small">
-                    <i class="bi bi-gear me-1"></i> Alterar
-                </a>
-            @endif
-        </div>
     </div>
 </div>
 @endsection

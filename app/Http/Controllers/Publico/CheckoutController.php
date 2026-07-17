@@ -40,10 +40,18 @@ class CheckoutController extends Controller
         abort_if($videos->isEmpty(), 422, 'Nenhum vídeo válido para compra.');
 
         $pedido = DB::transaction(function () use ($album, $data, $videos) {
-            // Snapshot do preço COM LOCK — se admin alterar no meio, respeitamos o valor bloqueado
+            // ATENÇÃO: preço vem SEMPRE do banco. Nunca do request. Snapshot com lock
+            // pra que troca de plano/preço durante a compra não crie inconsistência.
             $albumLocked = Album::whereKey($album->id)->lockForUpdate()->with('evento')->first();
             $preco = $albumLocked->precoEfetivoPorVideo();
             $total = round($preco * $videos->count(), 2);
+            $ehGratis = $albumLocked->ehGratuito();
+
+            // Anti-tampering: valida de novo com base no álbum bloqueado — se admin marcou
+            // como "não publicado" no meio da transaction, aborta.
+            if ($albumLocked->status !== 'publicado' || $albumLocked->evento?->status !== 'ativo') {
+                abort(response()->json(['message' => 'Álbum indisponível.'], 404));
+            }
 
             // Comprador: firstOrCreate por email (unique constraint garante consistência mesmo em race)
             $email = strtolower(trim($data['email']));
@@ -57,6 +65,9 @@ class CheckoutController extends Controller
             ]);
             if ($updates) $comprador->update($updates);
 
+            // Grátis → 'pago' direto sem gateway (não há o que cobrar).
+            // Pago  → 'pago' também (MVP; quando integrar gateway, muda pra 'pendente' e libera após webhook).
+            // A diferenciação fica registrada em `total` (0.00 vs >0) e no ehGratis pra auditoria.
             $pedido = Pedido::create([
                 'album_id' => $album->id,
                 'user_id' => $album->user_id,
@@ -65,8 +76,9 @@ class CheckoutController extends Controller
                 'comprador_email' => $comprador->email,
                 'comprador_whatsapp' => $comprador->whatsapp,
                 'total' => $total,
-                'status' => 'pago',   // MVP — gateway real entra depois
+                'status' => 'pago',
                 'pago_em' => now(),
+                'gateway_id' => $ehGratis ? 'gratis' : null, // marca origem gratuita p/ relatórios
             ]);
 
             foreach ($videos as $v) {
@@ -77,11 +89,14 @@ class CheckoutController extends Controller
                 ]);
             }
 
-            // Credita saldo — parênteses evitam ambiguidade de precedência
-            $totalCents = (int) round($total * 100);
-            DB::table('users')->where('id', $album->user_id)->update([
-                'saldo_disponivel' => DB::raw("saldo_disponivel + ({$totalCents} / 100)"),
-            ]);
+            // Credita saldo apenas se houve receita real (total > 0).
+            // Grátis não credita saldo pro vendedor.
+            if ($total > 0) {
+                $totalCents = (int) round($total * 100);
+                DB::table('users')->where('id', $album->user_id)->update([
+                    'saldo_disponivel' => DB::raw("saldo_disponivel + ({$totalCents} / 100)"),
+                ]);
+            }
 
             return $pedido;
         });
