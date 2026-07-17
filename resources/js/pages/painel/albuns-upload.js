@@ -373,34 +373,46 @@ document.addEventListener('DOMContentLoaded', () => {
         videosList.appendChild(li);
     }
 
+    // Toggle de seleção: clicar em qualquer lugar do .pv-item (exceto
+    // botões/dropdowns/inputs/links) marca/desmarca. Mais rápido que caçar
+    // o checkbox pequeno; também funciona com teclado (foco + Enter).
     videosList.addEventListener('click', async (e) => {
-        // Checkbox de seleção
-        const cb = e.target.closest('.pv-check');
-        if (cb) {
-            const li = cb.closest('.pv-item');
-            const id = Number(li.dataset.id);
-            if (cb.checked) { selectedIds.add(id); li.classList.add('is-selected'); }
-            else { selectedIds.delete(id); li.classList.remove('is-selected'); }
-            updateBulkBar();
+        // Áreas que NUNCA disparam toggle — botões próprios do card
+        const interactable = e.target.closest('button, a, input, .dropdown-menu');
+
+        // Delete individual
+        const btnDel = e.target.closest('.pv-delete-video');
+        if (btnDel) {
+            if (!confirm('Remover este vídeo?')) return;
+            btnDel.disabled = true;
+            try {
+                await axios.delete(`/painel/videos/${btnDel.dataset.id}`);
+                window.showToast('Vídeo removido.', 'success');
+                const id = Number(btnDel.dataset.id);
+                selectedIds.delete(id);
+                btnDel.closest('.pv-item')?.remove();
+                updateBulkBar();
+                refreshStorage(false);
+            } catch (err) {
+                window.showToast(err.response?.data?.message || 'Erro ao remover.', 'error');
+                btnDel.disabled = false;
+            }
             return;
         }
-        // Delete individual
-        const btn = e.target.closest('.pv-delete-video');
-        if (!btn) return;
-        if (!confirm('Remover este vídeo?')) return;
-        btn.disabled = true;
-        try {
-            await axios.delete(`/painel/videos/${btn.dataset.id}`);
-            window.showToast('Vídeo removido.', 'success');
-            const id = Number(btn.dataset.id);
-            selectedIds.delete(id);
-            btn.closest('.pv-item')?.remove();
-            updateBulkBar();
-            refreshStorage(false);
-        } catch (err) {
-            window.showToast(err.response?.data?.message || 'Erro ao remover.', 'error');
-            btn.disabled = false;
-        }
+
+        // Interações internas (preview, download dropdown, etc.) — deixa passar
+        if (interactable) return;
+
+        // Toggle do card inteiro
+        const li = e.target.closest('.pv-item[data-id]');
+        if (!li) return;
+        const cb = li.querySelector('.pv-check');
+        const id = Number(li.dataset.id);
+        const marcar = !li.classList.contains('is-selected');
+        if (cb) cb.checked = marcar;
+        if (marcar) { selectedIds.add(id); li.classList.add('is-selected'); }
+        else { selectedIds.delete(id); li.classList.remove('is-selected'); }
+        updateBulkBar();
     });
 
     // ---- Paginação / infinite scroll ----
@@ -592,11 +604,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             <h5 class="modal-title text-truncate">${escapeHtml(nome)}</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
-                        <div class="modal-body p-0" style="background:#0f172a;">
+                        <div class="modal-body p-0">
                             <div class="preview-viewport">
                                 <video id="preview-video-el" src="/painel/videos/${id}/stream/${inicial}"
                                        controls preload="metadata" playsinline
-                                       style="width:100%; max-height:60vh; display:block; background:#000; transform: rotate(${rotacao}deg);"></video>
+                                       data-rot="${podeUsarProcessado ? 0 : rotacao}"
+                                       style="transform: rotate(${podeUsarProcessado ? 0 : rotacao}deg);"></video>
                             </div>
                         </div>
                         <div class="modal-footer flex-wrap gap-2 justify-content-between">
@@ -644,6 +657,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let rotOriginal = rotacao;
         let srcAtual = inicial;
 
+        // Aplica rotação visual no vídeo — atualiza transform + data-rot (CSS
+        // usa data-rot pra ajustar max-width/max-height pós-rotação).
+        function aplicarRotacaoVisual(rot) {
+            video.style.transform = `rotate(${rot}deg)`;
+            video.setAttribute('data-rot', rot);
+        }
+
         // Troca source (processado vs original) — só na aba concluido
         el.querySelectorAll('[data-src]').forEach((b) => {
             b.addEventListener('click', () => {
@@ -651,9 +671,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 b.classList.add('active');
                 srcAtual = b.dataset.src;
                 video.src = `/painel/videos/${id}/stream/${srcAtual}`;
-                // Se está vendo o processado, ele JÁ tem a rotação aplicada
-                // pelo FFmpeg — não aplicar transform pra não girar 2x.
-                video.style.transform = srcAtual === 'processado' ? '' : `rotate(${rotAtual}deg)`;
+                // Processado JÁ tem a rotação aplicada pelo FFmpeg — não gira
+                // client-side, senão gira 2x. Original é o vídeo cru — aplica.
+                aplicarRotacaoVisual(srcAtual === 'processado' ? 0 : rotAtual);
             });
         });
 
@@ -664,8 +684,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 rotGroup.querySelectorAll('[data-rot]').forEach((x) => x.classList.remove('active'));
                 b.classList.add('active');
                 rotAtual = parseInt(b.dataset.rot, 10);
-                // Só aplica transform visual se está vendo o original
-                if (srcAtual === 'original') video.style.transform = `rotate(${rotAtual}deg)`;
+                if (srcAtual === 'original') aplicarRotacaoVisual(rotAtual);
                 saveBtn.disabled = rotAtual === rotOriginal;
             });
         });

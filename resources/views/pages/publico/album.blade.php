@@ -88,7 +88,12 @@
                                 <div class="d-flex align-items-center gap-3">
                                     <div class="text-end">
                                         <div class="small opacity-75">Selecionados</div>
-                                        <div class="fw-bold"><span id="pv-player-count">0</span>{{ $gratis ? '' : ' · R$ <span id="pv-player-total">0,00</span>' }}</div>
+                                        <div class="fw-bold">
+                                            <span id="pv-player-count">0</span>
+                                            @if(! $gratis)
+                                                · R$ <span id="pv-player-total">0,00</span>
+                                            @endif
+                                        </div>
                                     </div>
                                     <button type="button" class="btn btn-dark-panda btn-sm" id="pv-player-checkout" disabled>
                                         <i class="bi bi-cart-check me-1"></i>{{ $gratis ? 'Baixar' : 'Ir para checkout' }}
