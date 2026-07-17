@@ -218,6 +218,39 @@ class VideosUploadController extends Controller
         abort_unless($video->disk === 'local', 422, 'Rota apenas para uploads locais.');
         abort_unless($video->status === Video::STATUS_ENVIANDO, 409, 'Upload já finalizado.');
 
+        // Diagnóstico ANTES da validação: se o PHP marcou o arquivo como inválido
+        // (upload_max_filesize / post_max_size / tmp_dir), a validação `file` só
+        // devolve "Falha no upload". Aqui checamos o UPLOAD_ERR_* real e retornamos
+        // uma mensagem acionável + log em DB para o admin diagnosticar.
+        $arquivo = $request->file('arquivo');
+        if (! $arquivo || ! $arquivo->isValid()) {
+            $codigoErro = $arquivo?->getError() ?? UPLOAD_ERR_NO_FILE;
+            $motivo = $this->uploadErrorMensagem($codigoErro);
+            $contentLength = (int) $request->server('CONTENT_LENGTH', 0);
+
+            \App\Models\LogProcessamento::error('upload.local.php_error',
+                "Upload local rejeitado pelo PHP (code={$codigoErro}): {$motivo}",
+                [
+                    'video_id' => $video->id,
+                    'user_id' => $video->user_id,
+                    'part_number' => $request->input('part_number'),
+                    'php_upload_err' => $codigoErro,
+                    'content_length' => $contentLength,
+                    'php_post_max_size' => ini_get('post_max_size'),
+                    'php_upload_max_filesize' => ini_get('upload_max_filesize'),
+                    'php_upload_tmp_dir' => ini_get('upload_tmp_dir') ?: sys_get_temp_dir(),
+                    'sapi' => PHP_SAPI,
+                ]);
+
+            return response()->json([
+                'message' => $motivo,
+                'errors' => ['arquivo' => [$motivo]],
+                'php_upload_err' => $codigoErro,
+                'php_post_max_size' => ini_get('post_max_size'),
+                'php_upload_max_filesize' => ini_get('upload_max_filesize'),
+            ], 422);
+        }
+
         $data = $request->validate([
             'part_number' => ['required', 'integer', 'min:1', 'max:' . self::PARTS_MAX],
             // Sem validação de mimetype (é só um pedaço binário); tamanho ≤ chunk_size + margem.
@@ -526,6 +559,27 @@ class VideosUploadController extends Controller
     private function tempDir(Video $video): string
     {
         return "temp/videos/{$video->id}";
+    }
+
+    /**
+     * Traduz UPLOAD_ERR_* em mensagem acionável.
+     * Referência: https://www.php.net/manual/en/features.file-upload.errors.php
+     */
+    private function uploadErrorMensagem(int $codigo): string
+    {
+        return match ($codigo) {
+            UPLOAD_ERR_INI_SIZE => sprintf(
+                'Parte excede upload_max_filesize do PHP (atual: %s). Ajuste no php.ini de produção.',
+                ini_get('upload_max_filesize') ?: '?',
+            ),
+            UPLOAD_ERR_FORM_SIZE => 'Parte excede o limite MAX_FILE_SIZE do formulário.',
+            UPLOAD_ERR_PARTIAL => 'Upload interrompido no meio — provável timeout de rede/proxy. Tente novamente.',
+            UPLOAD_ERR_NO_FILE => 'Nenhum arquivo recebido. Provavelmente post_max_size (' . (ini_get('post_max_size') ?: '?') . ') é menor que a parte (5 MB) — ajuste no php.ini.',
+            UPLOAD_ERR_NO_TMP_DIR => 'PHP não conseguiu abrir pasta temporária (upload_tmp_dir="' . (ini_get('upload_tmp_dir') ?: sys_get_temp_dir()) . '"). Verifique permissão de escrita.',
+            UPLOAD_ERR_CANT_WRITE => 'Falha ao gravar arquivo temporário no disco (sem permissão ou disco cheio).',
+            UPLOAD_ERR_EXTENSION => 'Upload bloqueado por uma extensão PHP.',
+            default => 'Falha desconhecida no upload (código ' . $codigo . ').',
+        };
     }
 
     /**

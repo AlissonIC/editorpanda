@@ -39,7 +39,44 @@ class LogsController extends Controller
                 ->count(),
         ];
 
-        return view('pages.painel.logs', compact('contadores'));
+        // Diagnóstico do ambiente — útil pra debugar upload em produção (upload_max_filesize etc)
+        $tmpDir = ini_get('upload_tmp_dir') ?: sys_get_temp_dir();
+        $storageDir = storage_path('app');
+        $diagnostico = [
+            'php_version' => PHP_VERSION,
+            'sapi' => PHP_SAPI,
+            'post_max_size' => ini_get('post_max_size'),
+            'upload_max_filesize' => ini_get('upload_max_filesize'),
+            'max_file_uploads' => ini_get('max_file_uploads'),
+            'memory_limit' => ini_get('memory_limit'),
+            'max_execution_time' => ini_get('max_execution_time'),
+            'upload_tmp_dir' => $tmpDir,
+            'upload_tmp_writable' => is_writable($tmpDir),
+            'storage_free_gb' => $this->diskFreeGb($storageDir),
+            'ffmpeg_bin' => (string) config('services.ffmpeg.bin', 'ffmpeg'),
+            'ffmpeg_ok' => $this->binarioExiste((string) config('services.ffmpeg.bin', 'ffmpeg')),
+        ];
+
+        return view('pages.painel.logs', compact('contadores', 'diagnostico'));
+    }
+
+    private function diskFreeGb(string $path): ?float
+    {
+        if (! is_dir($path)) return null;
+        $bytes = @disk_free_space($path);
+        return $bytes === false ? null : round($bytes / 1024 / 1024 / 1024, 2);
+    }
+
+    private function binarioExiste(string $bin): bool
+    {
+        // Se for path absoluto, checa file_exists
+        if (str_contains($bin, DIRECTORY_SEPARATOR) || preg_match('/^[a-zA-Z]:/', $bin)) {
+            return @is_file($bin) && @is_executable($bin);
+        }
+        // Comando no PATH — resolve via where/which
+        $cmd = PHP_OS_FAMILY === 'Windows' ? "where {$bin} 2>NUL" : "command -v {$bin} 2>/dev/null";
+        $out = @shell_exec($cmd);
+        return ! empty(trim((string) $out));
     }
 
     /**

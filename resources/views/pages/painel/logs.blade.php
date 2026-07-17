@@ -12,6 +12,89 @@
     <div class="col-6 col-md-3"><x-theme::stat-card label="Failed jobs (fila)" value="{{ $contadores['failed_jobs'] }}"     icon="bi-lightning-charge" color="warning" /></div>
 </div>
 
+{{-- Diagnóstico do ambiente PHP — útil pra debugar upload/processamento em produção --}}
+@php
+    $postMax = (int) filter_var($diagnostico['post_max_size'], FILTER_SANITIZE_NUMBER_INT);
+    $uploadMax = (int) filter_var($diagnostico['upload_max_filesize'], FILTER_SANITIZE_NUMBER_INT);
+    $alertaUpload = $postMax < 8 || $uploadMax < 8; // partes = 5MB, precisa de folga
+    $alertaTmp = ! $diagnostico['upload_tmp_writable'];
+    $alertaFFmpeg = ! $diagnostico['ffmpeg_ok'];
+    $alertaDisco = $diagnostico['storage_free_gb'] !== null && $diagnostico['storage_free_gb'] < 1;
+    $temAlerta = $alertaUpload || $alertaTmp || $alertaFFmpeg || $alertaDisco;
+@endphp
+
+<div class="panda-card mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-heart-pulse me-1"></i>Diagnóstico do ambiente</h6>
+        @if($temAlerta)
+            <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Atenção</span>
+        @else
+            <span class="badge bg-success">OK</span>
+        @endif
+    </div>
+
+    <div class="row g-3 small">
+        <div class="col-md-3">
+            <div class="text-muted">PHP</div>
+            <div class="fw-semibold">{{ $diagnostico['php_version'] }} <span class="text-muted">({{ $diagnostico['sapi'] }})</span></div>
+        </div>
+        <div class="col-md-3">
+            <div class="text-muted">post_max_size</div>
+            <div class="fw-semibold {{ $postMax < 8 ? 'text-danger' : '' }}">
+                {{ $diagnostico['post_max_size'] }}
+                @if($postMax < 8)<i class="bi bi-exclamation-circle-fill ms-1" title="Precisa ser >= 8M (chunk 5MB + overhead)"></i>@endif
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="text-muted">upload_max_filesize</div>
+            <div class="fw-semibold {{ $uploadMax < 8 ? 'text-danger' : '' }}">
+                {{ $diagnostico['upload_max_filesize'] }}
+                @if($uploadMax < 8)<i class="bi bi-exclamation-circle-fill ms-1" title="Precisa ser >= 8M (chunk 5MB + overhead)"></i>@endif
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="text-muted">memory_limit</div>
+            <div class="fw-semibold">{{ $diagnostico['memory_limit'] }}</div>
+        </div>
+        <div class="col-md-6">
+            <div class="text-muted">upload_tmp_dir</div>
+            <div class="fw-semibold {{ $alertaTmp ? 'text-danger' : '' }}">
+                <code class="small">{{ $diagnostico['upload_tmp_dir'] }}</code>
+                @if($alertaTmp)
+                    <span class="badge bg-danger ms-1">não gravável</span>
+                @else
+                    <span class="badge bg-success-subtle text-success-emphasis ms-1">gravável</span>
+                @endif
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="text-muted">ffmpeg</div>
+            <div class="fw-semibold {{ $alertaFFmpeg ? 'text-danger' : '' }}">
+                <code class="small">{{ $diagnostico['ffmpeg_bin'] }}</code>
+                @if($alertaFFmpeg)
+                    <span class="badge bg-danger ms-1">não encontrado</span>
+                @else
+                    <span class="badge bg-success-subtle text-success-emphasis ms-1">ok</span>
+                @endif
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="text-muted">storage livre</div>
+            <div class="fw-semibold {{ $alertaDisco ? 'text-danger' : '' }}">
+                {{ $diagnostico['storage_free_gb'] !== null ? $diagnostico['storage_free_gb'] . ' GB' : '—' }}
+            </div>
+        </div>
+    </div>
+
+    @if($alertaUpload)
+        <div class="alert alert-danger mt-3 mb-0 small">
+            <strong>Upload de vídeos vai falhar em produção.</strong>
+            O sistema envia chunks de 5MB, mas <code>post_max_size</code>/<code>upload_max_filesize</code> estão abaixo desse limite.
+            Ajuste no <code>php.ini</code> pra pelo menos <code>8M</code> (recomendado <code>20M</code>) e reinicie o PHP-FPM/Apache.
+        </div>
+    @endif
+</div>
+
 <div class="panda-card p-0 overflow-hidden">
     <ul class="nav nav-tabs px-3 pt-3" id="logsTabs" role="tablist">
         <li class="nav-item">
