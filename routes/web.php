@@ -24,6 +24,9 @@ Route::name('publico.')->group(function () {
     Route::get('/a/{album:slug}', [Publico\AlbumPublicoController::class, 'show'])->name('album.show');
     // Thumbnails de vídeos em álbuns públicos — sem autenticação
     Route::get('/v/{video}/thumb', [Publico\AlbumPublicoController::class, 'servirThumbnail'])->name('video.thumb');
+    Route::get('/v/{video}/preview', [Publico\AlbumPublicoController::class, 'servirPreview'])
+        ->middleware('throttle:120,1')
+        ->name('video.preview');
     Route::post('/a/{album:slug}/checkout', [Publico\CheckoutController::class, 'store'])
         ->middleware('throttle:10,1')
         ->name('checkout.store');
@@ -122,6 +125,12 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
     Route::post('videos/{video}/abort', [Painel\VideosUploadController::class, 'abort'])->name('videos.abort');
     Route::post('videos/{video}/thumbnail', [Painel\VideosUploadController::class, 'uploadThumbnail'])->name('videos.thumbnail');
     Route::get('videos/{video}/thumbnail', [Painel\VideosUploadController::class, 'serveThumbnail'])->name('videos.thumbnail.serve');
+
+    // Preview + rotação + reprocessar
+    Route::get('videos/{video}/stream/original', [Painel\VideosUploadController::class, 'streamOriginal'])->name('videos.stream.original');
+    Route::get('videos/{video}/stream/processado', [Painel\VideosUploadController::class, 'streamProcessado'])->name('videos.stream.processado');
+    Route::put('videos/{video}/rotacao', [Painel\VideosUploadController::class, 'setRotacao'])->name('videos.rotacao');
+    Route::post('videos/{video}/reprocessar', [Painel\VideosUploadController::class, 'reprocessar'])->name('videos.reprocessar');
     Route::delete('videos/{video}', [Painel\VideosUploadController::class, 'destroy'])
         ->middleware('throttle:60,1')
         ->name('videos.destroy');

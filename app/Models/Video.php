@@ -32,6 +32,7 @@ class Video extends Model
         'erro_msg',
         'tamanho_bytes',
         'duracao_segundos',
+        'rotacao',
         'processado_em',
     ];
 
@@ -45,6 +46,7 @@ class Video extends Model
             'chunk_size' => 'integer',
             'total_parts' => 'integer',
             'duracao_segundos' => 'integer',
+            'rotacao' => 'integer',
         ];
     }
 
@@ -84,6 +86,30 @@ class Video extends Model
             ->where('pedido_itens.video_id', $this->id)
             ->where('pedidos.status', 'pago')
             ->exists();
+    }
+
+    /**
+     * Nome padronizado para download: {evento-slug}_{video-id}[_original].{ext}
+     *
+     * $tipo = 'processado' (default) ou 'original'.
+     * Usa o path real pra decidir a extensão — a saída processada é sempre mp4;
+     * o original pode ser mov/mkv/webm.
+     */
+    public function nomeArquivoDownload(string $tipo = 'processado'): string
+    {
+        $path = $tipo === 'original'
+            ? $this->arquivo_original_path
+            : $this->arquivo_processado_path;
+
+        $ext = pathinfo((string) $path, PATHINFO_EXTENSION) ?: 'mp4';
+
+        $eventoNome = $this->album?->evento?->nome
+            ?? $this->album?->nome
+            ?? 'video';
+        $slug = \Illuminate\Support\Str::slug($eventoNome) ?: 'video';
+
+        $sufixo = $tipo === 'original' ? '_original' : '';
+        return sprintf('%s_%d%s.%s', $slug, $this->id, $sufixo, strtolower($ext));
     }
 
     protected static function booted(): void

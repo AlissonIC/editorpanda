@@ -1475,3 +1475,158 @@ body {
     color: #fca5a5;
 }
 
+/* ========================================================
+   ÁLBUM PÚBLICO — cards de vídeo com botão de play + preview fullscreen
+   ======================================================== */
+.pv-video-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+}
+.pv-video-card {
+    position: relative;
+    background: #fff;
+    border: 1px solid #eaecf4;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease;
+
+    &:hover {
+        box-shadow: 0 6px 18px rgba(15,23,42,0.08);
+        border-color: #d5cffc;
+        transform: translateY(-2px);
+        .pv-play-overlay { opacity: 1; }
+    }
+    &.is-selected {
+        border-color: #7367f0;
+        box-shadow: 0 0 0 2px rgba(115,103,240,0.25);
+        .pv-check-badge { background: #7367f0; color: #fff; }
+    }
+}
+.pv-video-check-wrap {
+    position: absolute;
+    top: 0.5rem; left: 0.5rem;
+    z-index: 2;
+    cursor: pointer;
+    .pv-video-check { display: none; }
+    .pv-check-badge {
+        width: 26px; height: 26px;
+        border-radius: 0.4rem;
+        background: rgba(255,255,255,0.95);
+        border: 1px solid #d1d5db;
+        color: #9ca3af;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem;
+        transition: background .12s ease, color .12s ease;
+    }
+    .pv-video-check:checked + .pv-check-badge {
+        background: #7367f0;
+        color: #fff;
+        border-color: #7367f0;
+    }
+}
+.pv-video-play-btn {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+.pv-video-thumb {
+    position: relative;
+    aspect-ratio: 9 / 16;
+    background: #f4f6fa;
+    display: flex; align-items: center; justify-content: center;
+    color: #cbd5e1;
+    font-size: 2rem;
+    overflow: hidden;
+
+    img { width: 100%; height: 100%; object-fit: cover; }
+}
+.pv-play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.35);
+    color: #fff;
+    font-size: 3rem;
+    opacity: 0;
+    transition: opacity .15s ease;
+}
+.pv-video-info {
+    padding: 0.55rem 0.75rem 0.65rem;
+    text-align: left;
+}
+
+/* -------- Modal player fullscreen -------- */
+.pv-player-modal {
+    background: #000;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    border-radius: 0;
+    border: 0;
+}
+.pv-player-topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.75rem 1rem;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    flex-shrink: 0;
+    z-index: 2;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+.pv-player-stage {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 0;
+    padding: 1rem;
+    overflow: hidden;
+
+    video {
+        max-width: 100%;
+        max-height: 100%;
+        outline: none;
+    }
+}
+.pv-player-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: background .15s ease;
+    z-index: 3;
+
+    &:hover { background: rgba(255,255,255,0.25); }
+    &:disabled { opacity: 0.3; cursor: not-allowed; }
+    &.pv-player-prev { left: 1rem; }
+    &.pv-player-next { right: 1rem; }
+}
+.pv-player-bottombar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.75rem 1rem;
+    background: rgba(0,0,0,0.6);
+    flex-shrink: 0;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+    .pv-player-nav { width: 40px; height: 40px; font-size: 1.2rem; }
+    .pv-player-nav.pv-player-prev { left: 0.25rem; }
+    .pv-player-nav.pv-player-next { right: 0.25rem; }
+}
+

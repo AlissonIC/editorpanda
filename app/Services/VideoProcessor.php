@@ -73,7 +73,8 @@ class VideoProcessor
             // 4) Probe
             $meta = $this->probe($inputPath);
 
-            // 5) Build & run
+            // 5) Build & run — inclui rotação manual do vídeo se solicitada
+            $config['rotacao'] = (int) ($video->rotacao ?? 0);
             $outputPath = $tempDir . DIRECTORY_SEPARATOR . 'output.mp4';
             $cmd = $this->buildCommand($inputPath, $outputPath, $logoLocal, $meta, $config);
             $this->runFFmpeg($cmd);
@@ -195,13 +196,26 @@ class VideoProcessor
         $w = $meta['width'] ?: 1;
         $h = $meta['height'] ?: 1;
 
+        // Rotação manual (0/90/180/270) aplicada ANTES do scale/crop.
+        // Rotação 90/270 troca largura↔altura na entrada — ajusta aspect check.
+        $rotacao = (int) ($config['rotacao'] ?? 0);
+        $transpose = match ($rotacao) {
+            90 => 'transpose=1,',                 // clockwise
+            180 => 'transpose=1,transpose=1,',    // duas de 90
+            270 => 'transpose=2,',                // counter-clockwise
+            default => '',
+        };
+        if (in_array($rotacao, [90, 270], true)) {
+            [$w, $h] = [$h, $w]; // swap para o aspect check pós-rotação
+        }
+
         // Filtro base 1080x1920
         if ($w >= $h) {
             // Paisagem/quadrado: preenche altura → corta lateral centrado (zoom)
-            $vFilter = "scale=-2:{$H},crop={$W}:{$H}:(iw-{$W})/2:0,setsar=1";
+            $vFilter = "{$transpose}scale=-2:{$H},crop={$W}:{$H}:(iw-{$W})/2:0,setsar=1";
         } else {
             // Retrato: preenche largura → corta vertical centrado
-            $vFilter = "scale={$W}:-2,crop={$W}:{$H}:0:(ih-{$H})/2,setsar=1";
+            $vFilter = "{$transpose}scale={$W}:-2,crop={$W}:{$H}:0:(ih-{$H})/2,setsar=1";
         }
 
         $parts = ["[0:v]{$vFilter}[v0]"];

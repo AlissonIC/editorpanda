@@ -39,12 +39,8 @@ class VideosDownloadController extends Controller
 
         abort_unless($path, 404, 'Arquivo não disponível.');
 
-        // Se pediu processado mas não tem, cai pro original (com aviso no header)
-        if ($tipo === 'processado' && ! $path && $video->arquivo_original_path) {
-            $path = $video->arquivo_original_path;
-        }
-
-        $nomeArquivo = $this->nomeArquivoAmigavel($video, $tipo, $path);
+        $video->loadMissing('album.evento:id,nome');
+        $nomeArquivo = $video->nomeArquivoDownload($tipo);
         $disk = $video->disk ?: 'local';
 
         if ($disk === 's3') {
@@ -80,12 +76,14 @@ class VideosDownloadController extends Controller
         $videos = Video::query()
             ->where('album_id', $album->id)
             ->whereIn('id', $data['video_ids'])
+            ->with('album.evento:id,nome')
             ->get();
 
         abort_if($videos->isEmpty(), 404, 'Nenhum vídeo encontrado.');
 
         $tipo = $data['tipo'];
-        $nomeZip = Str::slug($album->nome ?: 'album') . '-' . $tipo . '.zip';
+        $albumSlug = Str::slug($album->evento?->nome ?: $album->nome ?: 'album');
+        $nomeZip = $albumSlug . '_' . $tipo . '.zip';
 
         return new StreamedResponse(function () use ($videos, $tipo) {
             $zip = new ZipStream(sendHttpHeaders: false);
@@ -98,7 +96,7 @@ class VideosDownloadController extends Controller
                 if (! $path) continue;
 
                 $disk = $video->disk ?: 'local';
-                $nomeInterno = $this->nomeArquivoAmigavel($video, $tipo, $path);
+                $nomeInterno = $video->nomeArquivoDownload($tipo);
 
                 try {
                     $stream = Storage::disk($disk)->readStream($path);
@@ -128,13 +126,5 @@ class VideosDownloadController extends Controller
     {
         if (auth()->user()->isAdmin()) return;
         abort_unless($album->user_id === auth()->id(), 403);
-    }
-
-    private function nomeArquivoAmigavel(Video $video, string $tipo, string $path): string
-    {
-        $ext = pathinfo($path, PATHINFO_EXTENSION) ?: 'mp4';
-        $base = pathinfo($video->nome, PATHINFO_FILENAME) ?: 'video-' . $video->id;
-        $sufixo = $tipo === 'original' ? '-original' : '';
-        return Str::slug($base) . $sufixo . '.' . $ext;
     }
 }

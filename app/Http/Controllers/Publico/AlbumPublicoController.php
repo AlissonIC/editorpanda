@@ -16,10 +16,10 @@ class AlbumPublicoController extends Controller
         abort_unless($album->status === 'publicado', 404);
         abort_unless($album->evento?->status === 'ativo', 404);
 
-        // Só mostra vídeos vendáveis (processando ou concluído).
-        // Status "pendente"/"enviando"/"falhou" não aparecem — evita venda sem entrega.
+        // Só mostra vídeos ENTREGÁVEIS (concluídos). Vender vídeos processando
+        // era risco: se o processamento falhasse, o comprador pagava por nada.
         $videos = $album->videos()
-            ->whereIn('status', ['processando', 'concluido'])
+            ->where('status', 'concluido')
             ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos'])
             ->orderBy('id')
             ->get()
@@ -27,9 +27,10 @@ class AlbumPublicoController extends Controller
                 'id' => $v->id,
                 'nome' => $v->nome,
                 'status' => $v->status,
-                'processado' => $v->status === 'concluido',
+                'processado' => true,
                 'duracao' => $this->formatDuration((int) $v->duracao_segundos),
                 'thumbnail_url' => $v->thumbnail_path ? route('publico.video.thumb', $v->id) : null,
+                'preview_url' => route('publico.video.preview', $v->id),
             ]);
 
         return view('pages.publico.album', [
@@ -61,6 +62,35 @@ class AlbumPublicoController extends Controller
             }
         }
         return Storage::disk('local')->response($video->thumbnail_path);
+    }
+
+    /**
+     * Stream do vídeo processado para o público (preview no /a/{slug}).
+     * O processado JÁ tem a logo do vendedor embutida — funciona como watermark.
+     * Só libera se o álbum está publicado e o evento ativo.
+     */
+    public function servirPreview(Video $video)
+    {
+        $album = $video->album()->with('evento')->first();
+        abort_unless($album && $album->status === 'publicado', 404);
+        abort_unless($album->evento && $album->evento->status === 'ativo', 404);
+        abort_unless($video->status === 'concluido' && $video->arquivo_processado_path, 404);
+
+        $disco = $video->disk ?: 'local';
+        if ($disco === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl(
+                    $video->arquivo_processado_path,
+                    now()->addMinutes(15),
+                );
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+        return Storage::disk('local')->response($video->arquivo_processado_path, null, [
+            'Content-Type' => 'video/mp4',
+        ]);
     }
 
     private function formatDuration(int $seconds): string

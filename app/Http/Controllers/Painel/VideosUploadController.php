@@ -478,6 +478,99 @@ class VideosUploadController extends Controller
     }
 
     /**
+     * Ajusta a rotação manual do vídeo (0/90/180/270).
+     * Só tem efeito no próximo processamento. Se o vídeo já estiver concluído,
+     * o dono precisa clicar em "Reprocessar" para o VideoProcessor rodar de novo.
+     */
+    public function setRotacao(Request $request, Video $video): JsonResponse
+    {
+        $this->autorizarVideo($video);
+        $data = $request->validate([
+            'rotacao' => ['required', 'integer', 'in:0,90,180,270'],
+        ]);
+        $video->update(['rotacao' => (int) $data['rotacao']]);
+        return response()->json(['rotacao' => $video->rotacao]);
+    }
+
+    /**
+     * Stream do vídeo original — usado no PREVIEW do dono antes de processar.
+     * Autoriza como dono/admin. Não expõe path privado; sempre roteia por aqui.
+     *
+     * Header Range é respeitado (browser precisa disso pro <video> seekar).
+     */
+    public function streamOriginal(Request $request, Video $video)
+    {
+        $this->autorizarVideo($video);
+        abort_unless($video->arquivo_original_path, 404);
+
+        $disco = $video->disk ?: 'local';
+        if ($disco === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl(
+                    $video->arquivo_original_path,
+                    now()->addMinutes(15),
+                );
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+
+        // Local: Storage::disk('local')->response() já emite bytes e respeita Range
+        return Storage::disk('local')->response($video->arquivo_original_path, null, [
+            'Content-Type' => 'video/mp4',
+        ]);
+    }
+
+    /**
+     * Stream do vídeo processado — mesmo endpoint pattern do original.
+     */
+    public function streamProcessado(Request $request, Video $video)
+    {
+        $this->autorizarVideo($video);
+        abort_unless($video->arquivo_processado_path, 404);
+
+        $disco = $video->disk ?: 'local';
+        if ($disco === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl(
+                    $video->arquivo_processado_path,
+                    now()->addMinutes(15),
+                );
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+
+        return Storage::disk('local')->response($video->arquivo_processado_path, null, [
+            'Content-Type' => 'video/mp4',
+        ]);
+    }
+
+    /**
+     * Reprocessa um vídeo já concluído (após mudar rotação, por exemplo).
+     * Volta status pra pendente e reenfileira.
+     */
+    public function reprocessar(Video $video): JsonResponse
+    {
+        $this->autorizarVideo($video);
+        abort_unless(
+            in_array($video->status, [Video::STATUS_CONCLUIDO, Video::STATUS_FALHOU], true),
+            422,
+            'Só reprocesse vídeos concluídos ou com falha.'
+        );
+
+        $video->update([
+            'status' => Video::STATUS_PENDENTE,
+            'erro_msg' => null,
+        ]);
+        \App\Jobs\ProcessarVideoJob::dispatch($video->id);
+
+        return response()->json(['message' => 'Vídeo enviado para reprocessamento.']);
+    }
+
+    /**
      * Remove um vídeo (arquivos + linha) — dispara Video::deleting.
      */
     public function destroy(Video $video): JsonResponse
@@ -506,7 +599,7 @@ class VideosUploadController extends Controller
 
         $perPage = (int) min(50, max(5, $request->input('per_page', 20)));
         $paginator = $album->videos()
-            ->select(['id', 'nome', 'status', 'disk', 'tamanho_bytes', 'thumbnail_path', 'created_at'])
+            ->select(['id', 'nome', 'status', 'disk', 'tamanho_bytes', 'thumbnail_path', 'rotacao', 'created_at'])
             ->orderByDesc('id')
             ->paginate($perPage);
 
@@ -518,6 +611,7 @@ class VideosUploadController extends Controller
             'tamanho_bytes' => (int) $v->tamanho_bytes,
             'tamanho_humano' => $this->formatBytes((int) $v->tamanho_bytes),
             'thumbnail_url' => $v->thumbnail_path ? route('painel.videos.thumbnail.serve', $v) : null,
+            'rotacao' => (int) $v->rotacao,
             'created_at' => $v->created_at?->format('d/m/Y H:i'),
         ]);
 

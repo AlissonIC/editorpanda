@@ -55,6 +55,26 @@ class VideoMerge extends Model
         return $this->belongsTo(Pedido::class);
     }
 
+    /**
+     * Nome padronizado do merge para download: {evento-slug}_merge_{id}.mp4
+     * Deriva do primeiro vídeo da lista pra descobrir o evento.
+     */
+    public function nomeArquivoDownload(): string
+    {
+        $primeiroId = collect($this->video_ids)->first();
+        $eventoNome = 'video';
+        if ($primeiroId) {
+            $ev = Video::where('id', $primeiroId)
+                ->with('album.evento:id,nome')
+                ->first();
+            $eventoNome = $ev?->album?->evento?->nome
+                ?? $ev?->album?->nome
+                ?? 'video';
+        }
+        $slug = \Illuminate\Support\Str::slug($eventoNome) ?: 'video';
+        return sprintf('%s_merge_%d.mp4', $slug, $this->id);
+    }
+
     protected static function booted(): void
     {
         static::creating(function (VideoMerge $merge) {

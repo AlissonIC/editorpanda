@@ -349,6 +349,11 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <span class="pv-badge badge bg-${color}-subtle text-${color}-emphasis">${label}</span>
             <div class="pv-actions">
+                <button type="button" class="btn btn-sm btn-outline-primary pv-preview-video"
+                        data-id="${v.id}" data-nome="${escapeHtml(v.nome)}" data-status="${v.status}"
+                        data-rotacao="${v.rotacao ?? 0}" title="Pré-visualizar">
+                    <i class="bi bi-play-fill"></i>
+                </button>
                 ${v.status === 'concluido' ? `
                     <div class="dropdown">
                         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" title="Baixar">
@@ -563,6 +568,142 @@ document.addEventListener('DOMContentLoaded', () => {
             e.returnValue = '';
         }
     });
+
+    // ==================== Preview modal + rotação ====================
+    videosList.addEventListener('click', (e) => {
+        const btn = e.target.closest('.pv-preview-video');
+        if (!btn) return;
+        abrirPreview({
+            id: btn.dataset.id,
+            nome: btn.dataset.nome,
+            status: btn.dataset.status,
+            rotacao: parseInt(btn.dataset.rotacao || '0', 10),
+        });
+    });
+
+    function abrirPreview({ id, nome, status, rotacao }) {
+        const podeUsarProcessado = status === 'concluido';
+        const inicial = podeUsarProcessado ? 'processado' : 'original';
+        const html = `
+            <div class="modal fade" id="modal-preview-video" tabindex="-1">
+                <div class="modal-dialog modal-lg modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title text-truncate">${escapeHtml(nome)}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-0" style="background:#0f172a;">
+                            <div class="preview-viewport">
+                                <video id="preview-video-el" src="/painel/videos/${id}/stream/${inicial}"
+                                       controls preload="metadata" playsinline
+                                       style="width:100%; max-height:60vh; display:block; background:#000; transform: rotate(${rotacao}deg);"></video>
+                            </div>
+                        </div>
+                        <div class="modal-footer flex-wrap gap-2 justify-content-between">
+                            <div>
+                                ${podeUsarProcessado ? `
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" data-src="original">Original</button>
+                                        <button type="button" class="btn btn-outline-secondary active" data-src="processado">Processado</button>
+                                    </div>
+                                ` : `
+                                    <span class="small text-muted">Vídeo ainda não processado — mostrando original</span>
+                                `}
+                            </div>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span class="small text-muted">Rotação:</span>
+                                <div class="btn-group btn-group-sm" id="preview-rot-group">
+                                    ${[0, 90, 180, 270].map((r) => `
+                                        <button type="button" class="btn btn-outline-secondary ${r === rotacao ? 'active' : ''}" data-rot="${r}">${r}°</button>
+                                    `).join('')}
+                                </div>
+                                <button type="button" class="btn btn-sm btn-dark-panda" id="preview-save-rot" data-id="${id}" disabled>
+                                    <i class="bi bi-check-lg me-1"></i>Salvar
+                                </button>
+                                ${status === 'concluido' || status === 'falhou' ? `
+                                    <button type="button" class="btn btn-sm btn-outline-primary" id="preview-reprocessar" data-id="${id}">
+                                        <i class="bi bi-arrow-clockwise me-1"></i>Reprocessar
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.getElementById('modal-preview-video')?.remove();
+        document.body.insertAdjacentHTML('beforeend', html);
+        const el = document.getElementById('modal-preview-video');
+        const modal = new bootstrap.Modal(el);
+
+        const video = el.querySelector('#preview-video-el');
+        const rotGroup = el.querySelector('#preview-rot-group');
+        const saveBtn = el.querySelector('#preview-save-rot');
+        const srcGroup = el.querySelector('.btn-group[data-src], .modal-footer .btn-group');
+        let rotAtual = rotacao;
+        let rotOriginal = rotacao;
+        let srcAtual = inicial;
+
+        // Troca source (processado vs original) — só na aba concluido
+        el.querySelectorAll('[data-src]').forEach((b) => {
+            b.addEventListener('click', () => {
+                el.querySelectorAll('[data-src]').forEach((x) => x.classList.remove('active'));
+                b.classList.add('active');
+                srcAtual = b.dataset.src;
+                video.src = `/painel/videos/${id}/stream/${srcAtual}`;
+                // Se está vendo o processado, ele JÁ tem a rotação aplicada
+                // pelo FFmpeg — não aplicar transform pra não girar 2x.
+                video.style.transform = srcAtual === 'processado' ? '' : `rotate(${rotAtual}deg)`;
+            });
+        });
+
+        // Botões de rotação — só afetam a preview do ORIGINAL (client-side).
+        // Salvar grava no banco pra próxima passada do processor.
+        rotGroup.querySelectorAll('[data-rot]').forEach((b) => {
+            b.addEventListener('click', () => {
+                rotGroup.querySelectorAll('[data-rot]').forEach((x) => x.classList.remove('active'));
+                b.classList.add('active');
+                rotAtual = parseInt(b.dataset.rot, 10);
+                // Só aplica transform visual se está vendo o original
+                if (srcAtual === 'original') video.style.transform = `rotate(${rotAtual}deg)`;
+                saveBtn.disabled = rotAtual === rotOriginal;
+            });
+        });
+
+        saveBtn.addEventListener('click', async () => {
+            saveBtn.disabled = true;
+            try {
+                await axios.put(`/painel/videos/${id}/rotacao`, { rotacao: rotAtual });
+                rotOriginal = rotAtual;
+                window.showToast('Rotação salva. Reprocesse o vídeo pra aplicar.', 'success');
+            } catch {
+                window.showToast('Erro ao salvar rotação.', 'error');
+                saveBtn.disabled = false;
+            }
+        });
+
+        el.querySelector('#preview-reprocessar')?.addEventListener('click', async (ev) => {
+            const b = ev.currentTarget;
+            if (!confirm('Reenviar pro processamento com as configurações atuais (rotação, logo, gradiente)?')) return;
+            b.disabled = true;
+            try {
+                await axios.post(`/painel/videos/${id}/reprocessar`);
+                window.showToast('Vídeo enfileirado para reprocessamento.', 'success');
+                modal.hide();
+                // Recarrega a lista pra pegar o novo status
+                paginaAtual = 0;
+                temMais = true;
+                videosList.innerHTML = '';
+                await carregarProximaPagina();
+            } catch (err) {
+                window.showToast(err.response?.data?.message || 'Erro ao reprocessar.', 'error');
+                b.disabled = false;
+            }
+        });
+
+        el.addEventListener('hidden.bs.modal', () => el.remove(), { once: true });
+        modal.show();
+    }
 
     // Kick inicial
     carregarProximaPagina();

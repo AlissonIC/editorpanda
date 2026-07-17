@@ -45,27 +45,76 @@
                     <p>Nenhum vídeo neste álbum ainda.</p>
                 </div>
             @else
-                <div class="pv-video-grid">
-                    @foreach($videos as $v)
-                        <label class="pv-video-card {{ $v['processado'] ? '' : 'is-processing' }}">
-                            <input type="checkbox" class="pv-video-check" value="{{ $v['id'] }}">
-                            <div class="pv-video-thumb">
-                                @if($v['thumbnail_url'])
-                                    <img src="{{ $v['thumbnail_url'] }}" alt="" loading="lazy">
-                                @else
-                                    <i class="bi bi-film"></i>
-                                @endif
+                <div class="pv-video-grid" id="pv-video-grid" data-videos="{{ json_encode($videos) }}">
+                    @foreach($videos as $i => $v)
+                        <div class="pv-video-card" data-video-index="{{ $i }}">
+                            <label class="pv-video-check-wrap">
+                                <input type="checkbox" class="pv-video-check" value="{{ $v['id'] }}">
                                 <div class="pv-check-badge"><i class="bi bi-check-lg"></i></div>
-                                @if(!$v['processado'])
-                                    <div class="pv-processing-tag">Em processamento</div>
-                                @endif
-                            </div>
+                            </label>
+                            <button type="button" class="pv-video-play-btn" data-video-index="{{ $i }}"
+                                    title="Pré-visualizar">
+                                <div class="pv-video-thumb">
+                                    @if($v['thumbnail_url'])
+                                        <img src="{{ $v['thumbnail_url'] }}" alt="" loading="lazy">
+                                    @else
+                                        <i class="bi bi-film"></i>
+                                    @endif
+                                    <div class="pv-play-overlay"><i class="bi bi-play-circle-fill"></i></div>
+                                </div>
+                            </button>
                             <div class="pv-video-info">
                                 <div class="text-truncate small fw-medium">{{ $v['nome'] }}</div>
                                 <div class="small text-muted">{{ $v['duracao'] }}</div>
                             </div>
-                        </label>
+                        </div>
                     @endforeach
+                </div>
+
+                {{-- Modal de preview fullscreen --}}
+                <div class="modal fade" id="modal-video-preview" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-fullscreen modal-dialog-centered m-0">
+                        <div class="modal-content pv-player-modal">
+                            <div class="pv-player-topbar">
+                                <div class="d-flex align-items-center gap-3">
+                                    <button type="button" class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">
+                                        <i class="bi bi-x-lg"></i> Fechar
+                                    </button>
+                                    <div>
+                                        <div class="fw-semibold" id="pv-player-title">—</div>
+                                        <div class="small opacity-75" id="pv-player-pos">—</div>
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="text-end">
+                                        <div class="small opacity-75">Selecionados</div>
+                                        <div class="fw-bold"><span id="pv-player-count">0</span>{{ $gratis ? '' : ' · R$ <span id="pv-player-total">0,00</span>' }}</div>
+                                    </div>
+                                    <button type="button" class="btn btn-dark-panda btn-sm" id="pv-player-checkout" disabled>
+                                        <i class="bi bi-cart-check me-1"></i>{{ $gratis ? 'Baixar' : 'Ir para checkout' }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="pv-player-stage">
+                                <button type="button" class="pv-player-nav pv-player-prev" id="pv-player-prev" title="Anterior">
+                                    <i class="bi bi-chevron-left"></i>
+                                </button>
+                                <video id="pv-player-video" controls playsinline preload="metadata"
+                                       style="max-width:100%; max-height:100%; background:#000;"></video>
+                                <button type="button" class="pv-player-nav pv-player-next" id="pv-player-next" title="Próximo">
+                                    <i class="bi bi-chevron-right"></i>
+                                </button>
+                            </div>
+
+                            <div class="pv-player-bottombar">
+                                <button type="button" class="btn btn-outline-light" id="pv-player-toggle">
+                                    <i class="bi bi-plus-lg me-1"></i>Adicionar ao pedido
+                                </button>
+                                <div class="small opacity-75" id="pv-player-name">—</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             @endif
         </div>

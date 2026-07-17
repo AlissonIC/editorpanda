@@ -81,7 +81,7 @@ class VideosMergeController extends Controller
         $this->autorizarMerge($merge);
         abort_unless($merge->status === VideoMerge::STATUS_CONCLUIDO && $merge->output_path, 404);
 
-        $nome = 'mesclado-' . $merge->slug . '.mp4';
+        $nome = $merge->nomeArquivoDownload();
         $disk = $merge->disk ?: 'local';
 
         if ($disk === 's3') {

@@ -49,11 +49,16 @@ class ComprasController extends Controller
         $path = $video->arquivo_processado_path ?: $video->arquivo_original_path;
         abort_unless($path, 404);
 
+        $video->loadMissing('album.evento:id,nome');
+        // Sempre entrega o processado (com watermark do vendedor). Nome padronizado.
+        $tipo = $video->arquivo_processado_path ? 'processado' : 'original';
+        $nomeArquivo = $video->nomeArquivoDownload($tipo);
+
         $disk = $video->disk ?: 'local';
         if ($disk === 's3') {
             try {
                 $url = Storage::disk('s3')->temporaryUrl($path, now()->addMinutes(15), [
-                    'ResponseContentDisposition' => 'attachment; filename="' . $video->nome . '"',
+                    'ResponseContentDisposition' => 'attachment; filename="' . $nomeArquivo . '"',
                 ]);
                 return redirect()->away($url);
             } catch (\Throwable) {
@@ -61,7 +66,7 @@ class ComprasController extends Controller
             }
         }
 
-        return Storage::disk('local')->download($path, $video->nome);
+        return Storage::disk('local')->download($path, $nomeArquivo);
     }
 
     /**
@@ -134,7 +139,7 @@ class ComprasController extends Controller
         abort_unless($merge->comprador_id === $comprador->id, 403);
         abort_unless($merge->status === VideoMerge::STATUS_CONCLUIDO && $merge->output_path, 404);
 
-        $nome = 'mesclado-' . $merge->slug . '.mp4';
+        $nome = $merge->nomeArquivoDownload();
         $disk = $merge->disk ?: 'local';
 
         if ($disk === 's3') {
