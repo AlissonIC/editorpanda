@@ -190,17 +190,22 @@ class VideosUploadController extends Controller
 
         abort_unless($data['part_number'] <= $video->total_parts, 422, 'PartNumber fora do intervalo.');
 
-        $parts = collect($video->parts_json ?? [])
-            ->reject(fn ($p) => (int) $p['PartNumber'] === $data['part_number'])
-            ->push([
-                'PartNumber' => (int) $data['part_number'],
-                'ETag' => trim($data['etag'], "\""),
-            ])
-            ->sortBy('PartNumber')
-            ->values()
-            ->all();
+        $partNumber = (int) $data['part_number'];
+        $etag = trim($data['etag'], "\"");
 
-        $video->update(['parts_json' => $parts]);
+        // lockForUpdate: serializa read-modify-write; sem isso, uploads paralelos
+        // ao S3 chamam este endpoint simultâneos e sobrescrevem parts_json entre si.
+        $parts = DB::transaction(function () use ($video, $partNumber, $etag) {
+            $fresh = Video::whereKey($video->id)->lockForUpdate()->first();
+            $novo = collect($fresh->parts_json ?? [])
+                ->reject(fn ($p) => (int) $p['PartNumber'] === $partNumber)
+                ->push(['PartNumber' => $partNumber, 'ETag' => $etag])
+                ->sortBy('PartNumber')
+                ->values()
+                ->all();
+            $fresh->update(['parts_json' => $novo]);
+            return $novo;
+        });
 
         return response()->json(['gravadas' => count($parts), 'restantes' => $video->total_parts - count($parts)]);
     }
@@ -272,15 +277,20 @@ class VideosUploadController extends Controller
 
         $etag = md5_file(Storage::disk('local')->path("{$tempDir}/part-{$partNumber}.bin"));
 
-        // Registra parte em parts_json (upsert idempotente)
-        $parts = collect($video->parts_json ?? [])
-            ->reject(fn ($p) => (int) $p['PartNumber'] === $partNumber)
-            ->push(['PartNumber' => $partNumber, 'ETag' => $etag])
-            ->sortBy('PartNumber')
-            ->values()
-            ->all();
-
-        $video->update(['parts_json' => $parts]);
+        // Registra parte em parts_json (upsert idempotente).
+        // lockForUpdate + transaction: sem isso, N uploads paralelos leem
+        // parts_json ao mesmo tempo e se sobrescrevem no update — partes somem.
+        $parts = DB::transaction(function () use ($video, $partNumber, $etag) {
+            $fresh = Video::whereKey($video->id)->lockForUpdate()->first();
+            $novo = collect($fresh->parts_json ?? [])
+                ->reject(fn ($p) => (int) $p['PartNumber'] === $partNumber)
+                ->push(['PartNumber' => $partNumber, 'ETag' => $etag])
+                ->sortBy('PartNumber')
+                ->values()
+                ->all();
+            $fresh->update(['parts_json' => $novo]);
+            return $novo;
+        });
 
         return response()->json([
             'etag' => $etag,
@@ -325,8 +335,30 @@ class VideosUploadController extends Controller
                 return response()->json(['message' => 'Falha ao finalizar no S3: ' . $e->getMessage()], 500);
             }
         } else {
-            // Local: exige TODAS as partes e concatena em ordem em stream
+            // Local: exige TODAS as partes e concatena em ordem em stream.
             $parts = collect($video->parts_json ?? [])->sortBy('PartNumber')->values();
+
+            // Self-heal: se parts_json está curto (ex.: race já corrigido, mas
+            // alguém retentando um upload antigo), reconstroi a partir dos
+            // arquivos part-N.bin realmente no disco. Verdade final é o disco.
+            if ($parts->count() !== (int) $video->total_parts) {
+                $disk = Storage::disk('local');
+                $tempDir = $this->tempDir($video);
+                $partsDoDisco = [];
+                for ($n = 1; $n <= (int) $video->total_parts; $n++) {
+                    if ($disk->exists("{$tempDir}/part-{$n}.bin")) {
+                        $partsDoDisco[] = ['PartNumber' => $n, 'ETag' => ''];
+                    }
+                }
+                if (count($partsDoDisco) === (int) $video->total_parts) {
+                    $video->update(['parts_json' => $partsDoDisco]);
+                    $parts = collect($partsDoDisco);
+                    \App\Models\LogProcessamento::warning('upload.self_heal',
+                        'parts_json reconstruído a partir do disco (todas as partes presentes)',
+                        ['video_id' => $video->id, 'user_id' => $video->user_id]);
+                }
+            }
+
             if ($parts->count() !== (int) $video->total_parts) {
                 return response()->json([
                     'message' => sprintf('Faltam partes: temos %d de %d.', $parts->count(), $video->total_parts),
