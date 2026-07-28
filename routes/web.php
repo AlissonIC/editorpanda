@@ -129,7 +129,7 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
     // Preview + rotação + reprocessar
     Route::get('videos/{video}/stream/original', [Painel\VideosUploadController::class, 'streamOriginal'])->name('videos.stream.original');
     Route::get('videos/{video}/stream/processado', [Painel\VideosUploadController::class, 'streamProcessado'])->name('videos.stream.processado');
-    Route::put('videos/{video}/rotacao', [Painel\VideosUploadController::class, 'setRotacao'])->name('videos.rotacao');
+    Route::put('videos/{video}/transformacao', [Painel\VideosUploadController::class, 'setTransformacao'])->name('videos.transformacao');
     Route::post('videos/{video}/reprocessar', [Painel\VideosUploadController::class, 'reprocessar'])->name('videos.reprocessar');
     Route::delete('videos/{video}', [Painel\VideosUploadController::class, 'destroy'])
         ->middleware('throttle:60,1')
@@ -137,8 +137,16 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
     Route::post('videos/bulk-delete', [Painel\VideosUploadController::class, 'bulkDelete'])
         ->middleware('throttle:20,1')
         ->name('videos.bulk-delete');
+    Route::post('videos/bulk-reprocessar', [Painel\VideosUploadController::class, 'bulkReprocessar'])
+        ->middleware('throttle:20,1')
+        ->name('videos.bulk-reprocessar');
+    Route::put('albuns/{album}/defaults', [Painel\VideosUploadController::class, 'setDefaults'])
+        ->name('albuns.defaults');
     Route::get('albuns/{album}/videos/ids', [Painel\VideosUploadController::class, 'listAllVideoIds'])
         ->name('albuns.videos.ids');
+    Route::get('albuns/{album}/videos/status', [Painel\VideosUploadController::class, 'statusBatch'])
+        ->middleware('throttle:120,1')
+        ->name('albuns.videos.status');
     Route::get('albuns/{album}/videos', [Painel\VideosUploadController::class, 'listByAlbum'])->name('albuns.videos.list');
 
     Route::get('pedidos', [Painel\PedidosController::class, 'index'])->name('pedidos.index');

@@ -21,6 +21,7 @@ class Video extends Model
         'nome',
         'arquivo_original_path',
         'arquivo_processado_path',
+        'arquivo_preview_path',
         'thumbnail_path',
         'disk',
         'upload_id',
@@ -33,6 +34,7 @@ class Video extends Model
         'tamanho_bytes',
         'duracao_segundos',
         'rotacao',
+        'espelhado',
         'processado_em',
     ];
 
@@ -47,6 +49,7 @@ class Video extends Model
             'total_parts' => 'integer',
             'duracao_segundos' => 'integer',
             'rotacao' => 'integer',
+            'espelhado' => 'boolean',
         ];
     }
 
@@ -89,11 +92,15 @@ class Video extends Model
     }
 
     /**
-     * Nome padronizado para download: {evento-slug}_{video-id}[_original].{ext}
+     * Nome padronizado para download: "Evento nome 000021[ - original].ext"
      *
      * $tipo = 'processado' (default) ou 'original'.
      * Usa o path real pra decidir a extensão — a saída processada é sempre mp4;
-     * o original pode ser mov/mkv/webm.
+     * o original pode ser mov/mkv/webm/jpg/png.
+     *
+     * ID sempre com 6 dígitos zero-padded pra ordenação natural no sistema
+     * operacional do cliente. Sanitiza chars proibidos em nomes de arquivo
+     * (Windows: <>:"/\|?*) — mantém acentos e espaços.
      */
     public function nomeArquivoDownload(string $tipo = 'processado'): string
     {
@@ -103,13 +110,38 @@ class Video extends Model
 
         $ext = pathinfo((string) $path, PATHINFO_EXTENSION) ?: 'mp4';
 
-        $eventoNome = $this->album?->evento?->nome
+        $sufixo = $tipo === 'original' ? ' - original' : '';
+        return sprintf(
+            '%s %06d%s.%s',
+            $this->nomeBaseEvento(),
+            $this->id,
+            $sufixo,
+            strtolower($ext),
+        );
+    }
+
+    /**
+     * Nome de exibição do vídeo no painel: "Evento nome 000021" (sem extensão).
+     * Usado na listagem — o dono não precisa ver "WhatsApp Video 2026-07-15..."
+     * do arquivo enviado; o nome padronizado facilita reconhecer.
+     */
+    public function getNomeExibicaoAttribute(): string
+    {
+        return sprintf('%s %06d', $this->nomeBaseEvento(), $this->id);
+    }
+
+    private function nomeBaseEvento(): string
+    {
+        $nome = $this->album?->evento?->nome
             ?? $this->album?->nome
             ?? 'video';
-        $slug = \Illuminate\Support\Str::slug($eventoNome) ?: 'video';
 
-        $sufixo = $tipo === 'original' ? '_original' : '';
-        return sprintf('%s_%d%s.%s', $slug, $this->id, $sufixo, strtolower($ext));
+        // Remove chars proibidos em nomes de arquivo (Windows + POSIX)
+        $nome = preg_replace('/[<>:"\/\\\\|?*\x00-\x1F]/', '', $nome);
+        // Colapsa espaços internos
+        $nome = trim(preg_replace('/\s+/', ' ', $nome));
+
+        return $nome !== '' ? $nome : 'video';
     }
 
     protected static function booted(): void
@@ -131,6 +163,7 @@ class Video extends Model
             foreach (array_filter([
                 $video->arquivo_original_path,
                 $video->arquivo_processado_path,
+                $video->arquivo_preview_path,
                 $video->thumbnail_path,
             ]) as $path) {
                 \App\Support\StorageCleanup::deleteAndVerify($disco, $path, 'video_delete');

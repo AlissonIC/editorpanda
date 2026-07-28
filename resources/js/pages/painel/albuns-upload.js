@@ -2,7 +2,12 @@ import axios from 'axios';
 import { UploadTask } from '../../lib/upload-task';
 
 const MAX_ARQUIVOS_PARALELOS = 2;
-const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm'];
+const ACCEPTED = [
+    'video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm',
+    // Imagens são convertidas em MP4 estático (5s) no processamento
+    'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
+];
+const EXT_REGEX = /\.(mp4|mov|mkv|webm|jpe?g|png|webp|heic|heif)$/i;
 const MAX_BYTES = 300 * 1024 * 1024; // 300 MB por arquivo
 const VIEW_KEY = 'panda-videos-view';
 
@@ -38,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Widget lateral
     const widget = document.getElementById('storage-widget');
     const listUrl = widget?.dataset?.listUrl;
+    const statusUrl = widget?.dataset?.statusUrl;
     const swUsado = document.getElementById('sw-usado');
     const swLimite = document.getElementById('sw-limite');
     const swBar = document.getElementById('sw-bar');
@@ -206,6 +212,63 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // ==================== Defaults do álbum (rotação/espelho automáticos) ====================
+    const defaultsBar = document.getElementById('pv-defaults');
+    if (defaultsBar) {
+        const defaultsUrl = defaultsBar.dataset.url;
+        const selRot = document.getElementById('pv-default-rot');
+        const cbMirror = document.getElementById('pv-default-mirror');
+        const savedHint = document.getElementById('pv-default-saved');
+
+        selRot.value = String(parseInt(defaultsBar.dataset.rotacao || '0', 10));
+        cbMirror.checked = defaultsBar.dataset.espelhado === '1';
+
+        let salvarTimer = null;
+        async function salvarDefaults() {
+            clearTimeout(salvarTimer);
+            savedHint.classList.add('d-none');
+            try {
+                await axios.put(defaultsUrl, {
+                    rotacao_padrao: parseInt(selRot.value, 10),
+                    espelhado_padrao: cbMirror.checked,
+                });
+                savedHint.classList.remove('d-none');
+                salvarTimer = setTimeout(() => savedHint.classList.add('d-none'), 2500);
+            } catch (err) {
+                window.showToast(err.response?.data?.message || 'Erro ao salvar padrão.', 'error');
+            }
+        }
+
+        selRot.addEventListener('change', salvarDefaults);
+        cbMirror.addEventListener('change', salvarDefaults);
+    }
+
+    // ==================== Bulk reprocess ====================
+    const bulkReprocess = document.getElementById('pv-bulk-reprocess');
+    bulkReprocess?.addEventListener('click', async () => {
+        const ids = [...selectedIds];
+        if (!ids.length) return;
+        if (!confirm(`Reprocessar ${ids.length} vídeo(s)? Só afeta vídeos concluídos ou com falha.`)) return;
+
+        bulkReprocess.disabled = true;
+        try {
+            const { data } = await axios.post(bulkReprocess.dataset.url, { ids });
+            window.showToast(data.message || 'Reprocessamento enfileirado.', 'success');
+            // Atualiza status dos cards afetados imediatamente pra "pendente" —
+            // o polling em seguida vai refletir "processando" e "concluido".
+            ids.forEach((id) => {
+                const li = videosList.querySelector(`.pv-item[data-id="${id}"]`);
+                if (li) atualizarStatusItem(li, 'pendente', null, li.querySelector('.pv-name')?.getAttribute('title') || '');
+            });
+            selectedIds.clear();
+            updateBulkBar();
+        } catch (err) {
+            window.showToast(err.response?.data?.message || 'Erro ao reprocessar.', 'error');
+        } finally {
+            bulkReprocess.disabled = false;
+        }
+    });
+
     bulkDelete.addEventListener('click', async () => {
         const ids = [...selectedIds];
         if (!ids.length) return;
@@ -321,15 +384,17 @@ document.addEventListener('DOMContentLoaded', () => {
         falhou: ['danger', 'Falhou'],
     };
 
-    function appendVideoItem(v) {
+    function buildVideoItem(v) {
         const [color, label] = statusBadgeMap[v.status] || ['secondary', v.status];
+        const fallbackIcon = v.is_imagem ? 'bi-image' : 'bi-film';
         const thumb = v.thumbnail_url
             ? `<img class="pv-thumb" src="${v.thumbnail_url}" alt="" loading="lazy">`
-            : `<div class="pv-thumb pv-thumb-placeholder"><i class="bi bi-film"></i></div>`;
+            : `<div class="pv-thumb pv-thumb-placeholder"><i class="bi ${fallbackIcon}"></i></div>`;
 
         const li = document.createElement('li');
         li.className = 'pv-item is-done';
         li.dataset.id = v.id;
+        li.dataset.status = v.status;
         if (selectedIds.has(v.id)) li.classList.add('is-selected');
 
         li.innerHTML = `
@@ -351,26 +416,45 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="pv-actions">
                 <button type="button" class="btn btn-sm btn-outline-primary pv-preview-video"
                         data-id="${v.id}" data-nome="${escapeHtml(v.nome)}" data-status="${v.status}"
-                        data-rotacao="${v.rotacao ?? 0}" title="Pré-visualizar">
-                    <i class="bi bi-play-fill"></i>
+                        data-rotacao="${v.rotacao ?? 0}" data-espelhado="${v.espelhado ? 1 : 0}"
+                        data-imagem="${v.is_imagem ? 1 : 0}"
+                        title="Pré-visualizar">
+                    <i class="bi ${v.is_imagem ? 'bi-eye' : 'bi-play-fill'}"></i>
                 </button>
-                ${v.status === 'concluido' ? `
-                    <div class="dropdown">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" title="Baixar">
-                            <i class="bi bi-download"></i>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="/painel/videos/${v.id}/download/processado"><i class="bi bi-film me-2"></i>Vídeo processado</a></li>
-                            <li><a class="dropdown-item" href="/painel/videos/${v.id}/download/original"><i class="bi bi-file-earmark me-2"></i>Original</a></li>
-                        </ul>
-                    </div>
-                ` : ''}
+                <div class="dropdown pv-download-menu ${v.status === 'concluido' ? '' : 'd-none'}">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" title="Baixar">
+                        <i class="bi bi-download"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="/painel/videos/${v.id}/download/processado"><i class="bi bi-film me-2"></i>Vídeo processado</a></li>
+                        <li><a class="dropdown-item" href="/painel/videos/${v.id}/download/original"><i class="bi bi-file-earmark me-2"></i>Original</a></li>
+                    </ul>
+                </div>
                 <button type="button" class="btn btn-sm btn-outline-danger pv-delete-video" data-id="${v.id}" title="Remover">
                     <i class="bi bi-trash"></i>
                 </button>
             </div>
         `;
-        videosList.appendChild(li);
+        return li;
+    }
+
+    function appendVideoItem(v) {
+        videosList.appendChild(buildVideoItem(v));
+    }
+
+    // Remove placeholders "Carregando…" / "Nenhum vídeo…" (li sem .pv-item)
+    // e insere o card no topo — preserva a ordem de upload (mais recente primeiro).
+    function prependVideoItem(v) {
+        // Se já existe (ex.: duplo callback), atualiza no lugar em vez de duplicar
+        const existente = videosList.querySelector(`.pv-item[data-id="${v.id}"]`);
+        if (existente) {
+            atualizarStatusItem(existente, v.status, null, v.nome);
+            return;
+        }
+        videosList.querySelectorAll(':scope > li:not(.pv-item)').forEach((n) => n.remove());
+        videosList.insertBefore(buildVideoItem(v), videosList.firstChild);
+        totalDoAlbum++;
+        updateBulkBar();
     }
 
     // Toggle de seleção: clicar em qualquer lugar do .pv-item (exceto
@@ -489,10 +573,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // ---- Adição de arquivos + pipeline ----
     function addFiles(files) {
         [...files].forEach((file) => {
-            const isVideo = file.type
+            const aceito = file.type
                 ? ACCEPTED.includes(file.type)
-                : /\.(mp4|mov|mkv|webm)$/i.test(file.name);
-            if (!isVideo) { window.showToast(`"${file.name}" não é aceito.`, 'warning'); return; }
+                : EXT_REGEX.test(file.name);
+            if (!aceito) { window.showToast(`"${file.name}" não é aceito.`, 'warning'); return; }
             if (file.size > MAX_BYTES) { window.showToast(`"${file.name}" excede o limite.`, 'warning'); return; }
 
             const item = { id: ++uid, file, status: 'queued', progress: 0, error: null, task: null };
@@ -521,8 +605,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 else if (st === 'finalizando') item.detalhe = 'Finalizando';
                 else if (st === 'done') {
                     item.status = 'done';
-                    // Recarrega a lista de vídeos + widget
-                    refreshStorage(true);
+                    // Insere o card na lista de "Enviados" sem full reload.
+                    // Se o backend não devolveu o card (falha inesperada), cai
+                    // no fallback de refresh completo.
+                    if (extra?.video) {
+                        prependVideoItem(extra.video);
+                        refreshStorage(false); // só o widget de storage
+                    } else {
+                        refreshStorage(true);
+                    }
+                    const idx = queue.indexOf(item);
+                    if (idx >= 0) queue.splice(idx, 1);
+                    item.li?.remove();
+                    updateCounter();
+                    return; // paintQueueItem/updateCounter abaixo são desnecessários
                 }
                 else if (st === 'error') { item.status = 'error'; item.error = extra?.message || 'Erro'; }
                 else if (st === 'aborted') { item.status = 'error'; item.error = item.error || 'Cancelado'; }
@@ -590,52 +686,64 @@ document.addEventListener('DOMContentLoaded', () => {
             nome: btn.dataset.nome,
             status: btn.dataset.status,
             rotacao: parseInt(btn.dataset.rotacao || '0', 10),
+            espelhado: btn.dataset.espelhado === '1',
+            isImagem: btn.dataset.imagem === '1',
         });
     });
 
-    function abrirPreview({ id, nome, status, rotacao }) {
+    function abrirPreview({ id, nome, status, rotacao, espelhado, isImagem }) {
         const podeUsarProcessado = status === 'concluido';
         const inicial = podeUsarProcessado ? 'processado' : 'original';
+        const naoProcessadoHint = isImagem
+            ? 'Imagem ainda não processada — mostrando original'
+            : 'Vídeo ainda não processado — mostrando original';
+
         const html = `
-            <div class="modal fade" id="modal-preview-video" tabindex="-1">
-                <div class="modal-dialog modal-lg modal-dialog-centered">
-                    <div class="modal-content">
+            <div class="modal fade preview-modal" id="modal-preview-video" tabindex="-1">
+                <div class="modal-dialog modal-xl modal-dialog-centered">
+                    <div class="modal-content preview-modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title text-truncate">${escapeHtml(nome)}</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
-                        <div class="modal-body p-0">
-                            <div class="preview-viewport">
-                                <video id="preview-video-el" src="/painel/videos/${id}/stream/${inicial}"
-                                       controls preload="metadata" playsinline
-                                       data-rot="${podeUsarProcessado ? 0 : rotacao}"
-                                       style="transform: rotate(${podeUsarProcessado ? 0 : rotacao}deg);"></video>
+                        <div class="modal-body p-0 preview-modal-body">
+                            <div class="preview-viewport" id="preview-viewport">
+                                <video id="preview-video-el" preload="metadata" playsinline
+                                       ${inicial === 'processado' ? 'controls' : ''}
+                                       style="${inicial === 'processado' ? '' : 'display:none'}"></video>
+                                <img id="preview-img-el" alt=""
+                                     style="${inicial === 'original' && isImagem ? '' : 'display:none'}">
                             </div>
                         </div>
                         <div class="modal-footer flex-wrap gap-2 justify-content-between">
                             <div>
                                 ${podeUsarProcessado ? `
-                                    <div class="btn-group btn-group-sm">
+                                    <div class="btn-group btn-group-sm" id="preview-src-group">
                                         <button type="button" class="btn btn-outline-secondary" data-src="original">Original</button>
                                         <button type="button" class="btn btn-outline-secondary active" data-src="processado">Processado</button>
                                     </div>
                                 ` : `
-                                    <span class="small text-muted">Vídeo ainda não processado — mostrando original</span>
+                                    <span class="small text-muted">${naoProcessadoHint}</span>
                                 `}
                             </div>
                             <div class="d-flex align-items-center gap-2 flex-wrap">
-                                <span class="small text-muted">Rotação:</span>
-                                <div class="btn-group btn-group-sm" id="preview-rot-group">
-                                    ${[0, 90, 180, 270].map((r) => `
-                                        <button type="button" class="btn btn-outline-secondary ${r === rotacao ? 'active' : ''}" data-rot="${r}">${r}°</button>
-                                    `).join('')}
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-secondary" data-transform="rot-left" title="Girar 90° à esquerda">
+                                        <i class="bi bi-arrow-counterclockwise"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" data-transform="rot-right" title="Girar 90° à direita">
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" data-transform="mirror" title="Espelhar (flip horizontal)">
+                                        <i class="bi bi-symmetry-vertical"></i>
+                                    </button>
                                 </div>
-                                <button type="button" class="btn btn-sm btn-dark-panda" id="preview-save-rot" data-id="${id}" disabled>
+                                <button type="button" class="btn btn-sm btn-dark-panda" id="preview-save-transform" disabled>
                                     <i class="bi bi-check-lg me-1"></i>Salvar
                                 </button>
                                 ${status === 'concluido' || status === 'falhou' ? `
-                                    <button type="button" class="btn btn-sm btn-outline-primary" id="preview-reprocessar" data-id="${id}">
-                                        <i class="bi bi-arrow-clockwise me-1"></i>Reprocessar
+                                    <button type="button" class="btn btn-sm btn-outline-primary" id="preview-reprocessar">
+                                        <i class="bi bi-arrow-repeat me-1"></i>Reprocessar
                                     </button>
                                 ` : ''}
                             </div>
@@ -650,66 +758,161 @@ document.addEventListener('DOMContentLoaded', () => {
         const modal = new bootstrap.Modal(el);
 
         const video = el.querySelector('#preview-video-el');
-        const rotGroup = el.querySelector('#preview-rot-group');
-        const saveBtn = el.querySelector('#preview-save-rot');
-        const srcGroup = el.querySelector('.btn-group[data-src], .modal-footer .btn-group');
+        const img = el.querySelector('#preview-img-el');
+        const viewport = el.querySelector('#preview-viewport');
+        const saveBtn = el.querySelector('#preview-save-transform');
+
+        // Estado local. O processado JÁ tem transform aplicado no arquivo,
+        // então quando mostramos processado: rotação/mirror visuais = 0/false.
         let rotAtual = rotacao;
-        let rotOriginal = rotacao;
+        let mirrorAtual = espelhado;
+        let rotOriginalDb = rotacao;
+        let mirrorOriginalDb = espelhado;
         let srcAtual = inicial;
 
-        // Aplica rotação visual no vídeo — atualiza transform + data-rot (CSS
-        // usa data-rot pra ajustar max-width/max-height pós-rotação).
-        function aplicarRotacaoVisual(rot) {
-            video.style.transform = `rotate(${rot}deg)`;
-            video.setAttribute('data-rot', rot);
+        // Se `usaImg` = true, renderizamos <img> (imagem crua no modo Original).
+        // Senão renderizamos <video>. Processado é SEMPRE MP4, mesmo p/ imagem.
+        const usaImgAgora = () => isImagem && srcAtual === 'original';
+
+        function elAtivo() { return usaImgAgora() ? img : video; }
+
+        function trocarFonte() {
+            const url = `/painel/videos/${id}/stream/${srcAtual}`;
+            if (usaImgAgora()) {
+                video.style.display = 'none';
+                video.pause?.();
+                video.removeAttribute('src'); video.load?.();
+                img.style.display = '';
+                img.src = url;
+            } else {
+                img.style.display = 'none';
+                img.removeAttribute('src');
+                video.style.display = '';
+                video.src = url;
+                // Só mostra controls no processado (no original, mudanças de rotação
+                // manual complicam a UX — igual ao comportamento anterior)
+                if (srcAtual === 'processado') video.setAttribute('controls', '');
+                else video.removeAttribute('controls');
+            }
         }
 
-        // Troca source (processado vs original) — só na aba concluido
+        // Fit dinâmico: calcula tamanho pós-transform pra caber dentro do viewport
+        // (que tem altura fixa). Funciona tanto para <video> quanto para <img>.
+        function fitMedia() {
+            const cw = viewport.clientWidth;
+            const ch = viewport.clientHeight;
+
+            let nw, nh;
+            if (usaImgAgora()) {
+                nw = img.naturalWidth || 16;
+                nh = img.naturalHeight || 9;
+            } else {
+                nw = video.videoWidth || 16;
+                nh = video.videoHeight || 9;
+            }
+
+            const rotVisual = srcAtual === 'processado' ? 0 : rotAtual;
+            const mirVisual = srcAtual === 'processado' ? false : mirrorAtual;
+            const rotated90 = (rotVisual % 180) !== 0;
+
+            const effW = rotated90 ? nh : nw;
+            const effH = rotated90 ? nw : nh;
+            const scale = Math.min(cw / effW, ch / effH, 1);
+            const displayW = effW * scale;
+            const displayH = effH * scale;
+
+            const alvo = elAtivo();
+            if (rotated90) {
+                alvo.style.width = displayH + 'px';
+                alvo.style.height = displayW + 'px';
+            } else {
+                alvo.style.width = displayW + 'px';
+                alvo.style.height = displayH + 'px';
+            }
+            alvo.style.transform = `rotate(${rotVisual}deg) scaleX(${mirVisual ? -1 : 1})`;
+        }
+
+        // Recomputa quando metadata do vídeo ou imagem carrega + em resize
+        video.addEventListener('loadedmetadata', fitMedia);
+        img.addEventListener('load', fitMedia);
+        const onResize = () => fitMedia();
+        window.addEventListener('resize', onResize);
+        el.addEventListener('hidden.bs.modal', () => window.removeEventListener('resize', onResize), { once: true });
+
+        // Carrega a fonte inicial
+        trocarFonte();
+
+        function marcarDirty() {
+            saveBtn.disabled = (rotAtual === rotOriginalDb && mirrorAtual === mirrorOriginalDb);
+        }
+
+        // Se estamos vendo o processado e o usuário altera transform, alterna
+        // pro original pra que a preview client-side faça sentido.
+        function garantirModoOriginal() {
+            if (srcAtual !== 'original') {
+                srcAtual = 'original';
+                el.querySelectorAll('[data-src]').forEach((x) => {
+                    x.classList.toggle('active', x.dataset.src === 'original');
+                });
+                trocarFonte();
+            }
+        }
+
+        // Botões: rot-left, rot-right, mirror
+        el.querySelectorAll('[data-transform]').forEach((b) => {
+            b.addEventListener('click', () => {
+                garantirModoOriginal();
+                const op = b.dataset.transform;
+                if (op === 'rot-left')  rotAtual = ((rotAtual - 90) + 360) % 360;
+                if (op === 'rot-right') rotAtual = (rotAtual + 90) % 360;
+                if (op === 'mirror')    mirrorAtual = !mirrorAtual;
+                fitMedia();
+                marcarDirty();
+                // Feedback visual no botão do mirror quando ativo
+                if (op === 'mirror') b.classList.toggle('active', mirrorAtual);
+            });
+        });
+
+        // Toggle Original ↔ Processado (só na aba concluído)
         el.querySelectorAll('[data-src]').forEach((b) => {
             b.addEventListener('click', () => {
                 el.querySelectorAll('[data-src]').forEach((x) => x.classList.remove('active'));
                 b.classList.add('active');
                 srcAtual = b.dataset.src;
-                video.src = `/painel/videos/${id}/stream/${srcAtual}`;
-                // Processado JÁ tem a rotação aplicada pelo FFmpeg — não gira
-                // client-side, senão gira 2x. Original é o vídeo cru — aplica.
-                aplicarRotacaoVisual(srcAtual === 'processado' ? 0 : rotAtual);
+                trocarFonte();
+                // Refit assim que a nova source carregar metadata/load
             });
         });
 
-        // Botões de rotação — só afetam a preview do ORIGINAL (client-side).
-        // Salvar grava no banco pra próxima passada do processor.
-        rotGroup.querySelectorAll('[data-rot]').forEach((b) => {
-            b.addEventListener('click', () => {
-                rotGroup.querySelectorAll('[data-rot]').forEach((x) => x.classList.remove('active'));
-                b.classList.add('active');
-                rotAtual = parseInt(b.dataset.rot, 10);
-                if (srcAtual === 'original') aplicarRotacaoVisual(rotAtual);
-                saveBtn.disabled = rotAtual === rotOriginal;
-            });
-        });
+        // Estado inicial do mirror-btn se já vem espelhado do banco
+        if (espelhado) {
+            el.querySelector('[data-transform="mirror"]')?.classList.add('active');
+        }
 
         saveBtn.addEventListener('click', async () => {
             saveBtn.disabled = true;
             try {
-                await axios.put(`/painel/videos/${id}/rotacao`, { rotacao: rotAtual });
-                rotOriginal = rotAtual;
-                window.showToast('Rotação salva. Reprocesse o vídeo pra aplicar.', 'success');
+                await axios.put(`/painel/videos/${id}/transformacao`, {
+                    rotacao: rotAtual,
+                    espelhado: mirrorAtual,
+                });
+                rotOriginalDb = rotAtual;
+                mirrorOriginalDb = mirrorAtual;
+                window.showToast('Transformações salvas. Reprocesse pra aplicar.', 'success');
             } catch {
-                window.showToast('Erro ao salvar rotação.', 'error');
+                window.showToast('Erro ao salvar.', 'error');
                 saveBtn.disabled = false;
             }
         });
 
         el.querySelector('#preview-reprocessar')?.addEventListener('click', async (ev) => {
             const b = ev.currentTarget;
-            if (!confirm('Reenviar pro processamento com as configurações atuais (rotação, logo, gradiente)?')) return;
+            if (!confirm('Reenviar pro processamento com as configurações atuais?')) return;
             b.disabled = true;
             try {
                 await axios.post(`/painel/videos/${id}/reprocessar`);
                 window.showToast('Vídeo enfileirado para reprocessamento.', 'success');
                 modal.hide();
-                // Recarrega a lista pra pegar o novo status
                 paginaAtual = 0;
                 temMais = true;
                 videosList.innerHTML = '';
@@ -723,6 +926,74 @@ document.addEventListener('DOMContentLoaded', () => {
         el.addEventListener('hidden.bs.modal', () => el.remove(), { once: true });
         modal.show();
     }
+
+    // ==================== Polling de status ====================
+    // Atualiza badges de vídeos ainda não terminados (enviando/pendente/processando)
+    // sem recarregar a lista inteira. Escala bem: só faz request se existir algum
+    // item em estado não-terminal, e pausa quando a aba está oculta.
+    const POLL_INTERVAL_MS = 3000;
+    const NAO_TERMINAL = new Set(['enviando', 'pendente', 'processando']);
+    const jaAvisouFalha = new Set(); // evita spam de toast se o poll repetir
+
+    function atualizarStatusItem(li, novoStatus, erroMsg, nome) {
+        const antigo = li.dataset.status;
+        if (antigo === novoStatus) return;
+        li.dataset.status = novoStatus;
+
+        const badge = li.querySelector('.pv-badge');
+        const [color, label] = statusBadgeMap[novoStatus] || ['secondary', novoStatus];
+        if (badge) {
+            badge.className = `pv-badge badge bg-${color}-subtle text-${color}-emphasis`;
+            badge.textContent = label;
+        }
+
+        const previewBtn = li.querySelector('.pv-preview-video');
+        if (previewBtn) previewBtn.dataset.status = novoStatus;
+
+        const dl = li.querySelector('.pv-download-menu');
+        if (dl) dl.classList.toggle('d-none', novoStatus !== 'concluido');
+
+        // Transições notáveis
+        if (novoStatus === 'falhou' && !jaAvisouFalha.has(Number(li.dataset.id))) {
+            jaAvisouFalha.add(Number(li.dataset.id));
+            window.showToast(`"${nome}" falhou: ${erroMsg || 'erro no processamento'}`, 'error');
+        }
+        if (novoStatus === 'concluido') {
+            // Widget de uso pode ter mudado (tamanho do processado != original) — refresh leve
+            refreshStorage(false);
+        }
+    }
+
+    let pollInFlight = false;
+    async function pollStatus() {
+        if (!statusUrl || pollInFlight || document.hidden) return;
+
+        const items = [...videosList.querySelectorAll('.pv-item[data-id]')]
+            .filter((li) => NAO_TERMINAL.has(li.dataset.status));
+        if (!items.length) return;
+
+        const ids = items.map((li) => Number(li.dataset.id));
+        pollInFlight = true;
+        try {
+            const { data } = await axios.get(statusUrl, { params: { ids: ids.join(',') } });
+            (data.videos || []).forEach((v) => {
+                const li = videosList.querySelector(`.pv-item[data-id="${v.id}"]`);
+                if (!li) return;
+                const nome = li.querySelector('.pv-name')?.getAttribute('title') || '';
+                atualizarStatusItem(li, v.status, v.erro_msg, nome);
+            });
+        } catch {
+            // silencia — polling é best-effort; a próxima tick tenta de novo
+        } finally {
+            pollInFlight = false;
+        }
+    }
+
+    setInterval(pollStatus, POLL_INTERVAL_MS);
+    // Ao voltar da aba oculta, dispara imediatamente pra não esperar 3s
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) pollStatus();
+    });
 
     // Kick inicial
     carregarProximaPagina();

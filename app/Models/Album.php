@@ -23,6 +23,8 @@ class Album extends Model
         'preco',
         'preco_por_video',
         'status',
+        'rotacao_padrao',
+        'espelhado_padrao',
     ];
 
     protected function casts(): array
@@ -30,6 +32,8 @@ class Album extends Model
         return [
             'preco' => 'decimal:2',
             'preco_por_video' => 'decimal:2',
+            'rotacao_padrao' => 'integer',
+            'espelhado_padrao' => 'boolean',
         ];
     }
 

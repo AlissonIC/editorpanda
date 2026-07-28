@@ -62,7 +62,7 @@ export class UploadTask {
             await this._runMultipart();
 
             this.onStatus('finalizando');
-            await axios.post(this.completeUrl);
+            const { data: completeData } = await axios.post(this.completeUrl);
 
             // Após o complete: envia a thumbnail (best-effort — não bloqueia sucesso)
             try {
@@ -71,13 +71,19 @@ export class UploadTask {
                     const form = new FormData();
                     form.append('thumbnail', thumb, 'thumb.jpg');
                     await axios.post(`/painel/videos/${this.videoId}/thumbnail`, form);
+                    // Backend só grava thumbnail_path após o POST /thumbnail — devolvemos
+                    // a URL prevista pra que o card seja inserido já com a thumb.
+                    if (completeData?.video) {
+                        completeData.video.thumbnail_url = `/painel/videos/${this.videoId}/thumbnail`;
+                    }
                 }
             } catch (e) {
                 console.warn('[thumbnail] falha ao enviar:', e?.message || e);
             }
 
             this.onProgress(100);
-            this.onStatus('done');
+            // Passa o card do vídeo pro chamador — evita full reload no painel.
+            this.onStatus('done', { video: completeData?.video || null });
         } catch (err) {
             if (this.aborted) {
                 this.onStatus('aborted');

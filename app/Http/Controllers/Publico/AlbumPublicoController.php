@@ -65,30 +65,33 @@ class AlbumPublicoController extends Controller
     }
 
     /**
-     * Stream do vídeo processado para o público (preview no /a/{slug}).
-     * O processado JÁ tem a logo do vendedor embutida — funciona como watermark.
-     * Só libera se o álbum está publicado e o evento ativo.
+     * Stream do vídeo de PREVIEW para o público (na página /a/{slug}).
+     * Serve o arquivo_preview_path (watermarks tiled + aviso de reprodução).
+     *
+     * Fallback: vídeos processados antes desta feature não têm preview — nesse
+     * caso caímos no arquivo_processado_path (pior que ter preview, mas evita
+     * quebrar álbuns antigos). Depois de reprocessar, o preview é gerado.
      */
     public function servirPreview(Video $video)
     {
         $album = $video->album()->with('evento')->first();
         abort_unless($album && $album->status === 'publicado', 404);
         abort_unless($album->evento && $album->evento->status === 'ativo', 404);
-        abort_unless($video->status === 'concluido' && $video->arquivo_processado_path, 404);
+        abort_unless($video->status === 'concluido', 404);
+
+        $path = $video->arquivo_preview_path ?: $video->arquivo_processado_path;
+        abort_unless($path, 404);
 
         $disco = $video->disk ?: 'local';
         if ($disco === 's3') {
             try {
-                $url = Storage::disk('s3')->temporaryUrl(
-                    $video->arquivo_processado_path,
-                    now()->addMinutes(15),
-                );
+                $url = Storage::disk('s3')->temporaryUrl($path, now()->addMinutes(15));
                 return redirect()->away($url);
             } catch (\Throwable) {
                 abort(500);
             }
         }
-        return Storage::disk('local')->response($video->arquivo_processado_path, null, [
+        return Storage::disk('local')->response($path, null, [
             'Content-Type' => 'video/mp4',
         ]);
     }

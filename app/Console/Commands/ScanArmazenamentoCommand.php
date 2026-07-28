@@ -96,12 +96,12 @@ class ScanArmazenamentoCommand extends Command
     {
         $pathsConhecidos = [];
 
-        // Videos (original, processado, thumbnail) no disk requerido
+        // Videos (original, processado, preview, thumbnail) no disk requerido
         Video::where('disk', $disk)
-            ->select('arquivo_original_path', 'arquivo_processado_path', 'thumbnail_path')
+            ->select('arquivo_original_path', 'arquivo_processado_path', 'arquivo_preview_path', 'thumbnail_path')
             ->cursor()
             ->each(function ($v) use (&$pathsConhecidos) {
-                foreach (['arquivo_original_path', 'arquivo_processado_path', 'thumbnail_path'] as $col) {
+                foreach (['arquivo_original_path', 'arquivo_processado_path', 'arquivo_preview_path', 'thumbnail_path'] as $col) {
                     if ($v->{$col}) $pathsConhecidos[$v->{$col}] = true;
                 }
             });

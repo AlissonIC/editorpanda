@@ -55,6 +55,60 @@ document.addEventListener('DOMContentLoaded', () => {
     const prevBtn = $('#pv-player-prev');
     const nextBtn = $('#pv-player-next');
 
+    // Hardening do player: bloqueia right-click, drag e cast/PiP.
+    // Não impede screen-record; a proteção real é a watermark queimada no MP4.
+    if (videoEl) {
+        videoEl.addEventListener('contextmenu', (e) => e.preventDefault());
+        videoEl.addEventListener('dragstart', (e) => e.preventDefault());
+        // Alguns navegadores só respeitam controlsList/disablePictureInPicture
+        // se setado via JS. Redundante com o HTML, mas garante Firefox/Safari.
+        videoEl.setAttribute('controlslist', 'nodownload noremoteplayback noplaybackrate');
+        videoEl.disablePictureInPicture = true;
+    }
+
+    // ==================== Proteção contra captura (best-effort) ====================
+    // Detectamos eventos que sugerem captura de tela ou gravação e mostramos um
+    // overlay de aviso + pausamos o vídeo. Cobertura real:
+    //   ✓ visibilitychange (trocou de aba)
+    //   ✓ window.blur      (abriu outro programa, ex: OBS)
+    //   ~ PrintScreen      (Chrome/Edge only; Firefox/Safari nem fire o keydown)
+    //   ✗ Win+Shift+S      (snipping tool — impossível detectar via browser)
+    //   ✗ Cmd+Shift+3/4    (macOS — impossível detectar via browser)
+    //   ✗ OBS/gravadores   (rodam fora do browser — invisíveis)
+    // Ou seja: aviso serve de deterrent, não é impedimento real.
+    const protectionOverlay = document.getElementById('pv-protection-overlay');
+    let protectionTimer = null;
+
+    function estaAssistindo() {
+        return modalEl?.classList.contains('show') && videoEl && !videoEl.paused;
+    }
+
+    function mostrarProtecao() {
+        if (!protectionOverlay) return;
+        // Pausa o vídeo pra impedir que o usuário assista enquanto captura.
+        // O overlay some após 4s; o usuário precisa dar play de novo pra continuar.
+        videoEl?.pause();
+        protectionOverlay.classList.add('is-visible');
+        clearTimeout(protectionTimer);
+        protectionTimer = setTimeout(() => {
+            protectionOverlay.classList.remove('is-visible');
+        }, 4000);
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && estaAssistindo()) mostrarProtecao();
+    });
+    window.addEventListener('blur', () => {
+        if (estaAssistindo()) mostrarProtecao();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (!modalEl?.classList.contains('show')) return;
+        // PrintScreen puro (Windows/Linux — Chrome/Edge dispara; outros não)
+        if (e.key === 'PrintScreen') { mostrarProtecao(); return; }
+        // Ctrl+Shift+S = atalho do Firefox pra "Take Screenshot"
+        if (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's')) mostrarProtecao();
+    });
+
     grid?.addEventListener('click', (e) => {
         const btnPlay = e.target.closest('.pv-video-play-btn');
         if (!btnPlay) return;

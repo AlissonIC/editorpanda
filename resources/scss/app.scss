@@ -1047,7 +1047,9 @@ body {
         }
 
         /* Checkbox — só aparece no hover ou quando selecionado.
-           Sem hover/select, some completamente pra não poluir a thumb. */
+           Sem hover/select, some completamente pra não poluir a thumb.
+           O <input> real fica escondido (só existe pra estado); o "checkbox
+           visual" é desenhado com ::after (traço branco quando selecionado). */
         .pv-check-cell {
             position: absolute;
             top: 0.5rem;
@@ -1056,13 +1058,32 @@ body {
             width: 26px; height: 26px;
             border-radius: 0.4rem;
             background: transparent;
-            border: 1.5px solid rgba(255,255,255,0.9);
+            border: 1.5px solid rgba(255,255,255,0.95);
             box-shadow: 0 1px 3px rgba(0,0,0,0.25);
             opacity: 0;
-            transition: opacity .15s ease, background .15s ease;
+            transition: opacity .15s ease, background .15s ease, border-color .15s ease;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
             .pv-check {
-                cursor: pointer;
-                pointer-events: none; // evita double-toggle; card inteiro é clicável
+                position: absolute;
+                width: 1px; height: 1px;
+                opacity: 0;
+                pointer-events: none;
+                margin: 0;
+            }
+
+            /* Check desenhado — só visível quando o card está selected */
+            &::after {
+                content: '';
+                width: 12px; height: 6px;
+                border-left: 2px solid #fff;
+                border-bottom: 2px solid #fff;
+                transform: rotate(-45deg) translateY(-2px);
+                opacity: 0;
+                transition: opacity .12s ease;
             }
         }
         &:hover .pv-check-cell { opacity: 1; }
@@ -1070,7 +1091,8 @@ body {
             opacity: 1;
             background: #7367f0;
             border-color: #7367f0;
-            .pv-check { accent-color: #fff; }
+            box-shadow: 0 1px 3px rgba(115,103,240,0.4);
+            &::after { opacity: 1; }
         }
 
         .pv-badge {
@@ -1115,10 +1137,28 @@ body {
             border-top: 1px solid #f3f4f6;
             background: #fafbfc;
             order: 5;
+
             .btn {
-                background: #fff;
+                background-color: #fff;
                 border-color: #e5e7eb;
             }
+            /* Hover: bg cinza discreto, mantém a cor do ícone visível.
+               Sem essas regras o Bootstrap outline vira branco+colored-bg,
+               mas nossa especificidade sobrescrevia só o bg → ícone branco
+               desaparecia no fundo branco. */
+            .btn:hover, .btn:focus-visible, .btn.show {
+                background-color: #eef0f3;
+                border-color: #c7cad3;
+            }
+            .btn-outline-primary:hover,
+            .btn-outline-primary:focus-visible,
+            .btn-outline-primary.show { color: #7367f0; }
+            .btn-outline-secondary:hover,
+            .btn-outline-secondary:focus-visible,
+            .btn-outline-secondary.show { color: #4b5563; }
+            .btn-outline-danger:hover,
+            .btn-outline-danger:focus-visible,
+            .btn-outline-danger.show { color: #dc2626; }
         }
     }
 }
@@ -1645,33 +1685,89 @@ body {
 }
 
 /* ========================================================
-   Preview no /painel/albuns/{id}/enviar — modal com rotação
+   Preview no /painel/albuns/{id}/enviar — modal com rotação + mirror
+   Altura do viewport é FIXA (baseada em vh). O JS calcula width/height
+   do <video> para caber respeitando a orientação atual.
    ======================================================== */
+.preview-modal .preview-modal-content {
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+}
+.preview-modal .preview-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #0f172a;
+    display: flex;
+    align-items: stretch;
+}
 .preview-viewport {
     display: flex;
     align-items: center;
     justify-content: center;
     background: #0f172a;
     padding: 1rem;
-    min-height: 300px;
-    max-height: 70vh;
+    width: 100%;
+    height: 70vh;
     overflow: hidden;
 }
-.preview-viewport video {
+.preview-viewport video,
+.preview-viewport img {
     display: block;
     background: #000;
-    max-width: 100%;
-    max-height: 60vh;
     transform-origin: center;
-    transition: transform .2s ease;
+    transition: width .2s ease, height .2s ease, transform .2s ease;
     outline: none;
+    max-width: none; // Evita o Bootstrap forçar 100% e quebrar o fit calculado no JS
 }
-/* Rotação 90/270: o "width" DOM vira "height" visual (e vice-versa). Sem
-   ajustar o max, o vídeo estoura o modal. Limitamos ambas as dimensões
-   ao menor dos limites (60vh) — post-rotação, cabe sempre. */
-.preview-viewport video[data-rot="90"],
-.preview-viewport video[data-rot="270"] {
-    max-width: 60vh;
-    max-height: 60vh;
+
+/* Barra de configurações padrão do álbum (rotação/espelho automáticos) */
+.pv-defaults-bar {
+    padding: .6rem 1rem;
+    background: #f8f9fc;
+    border-top: 1px solid #eaecf4;
 }
+
+/* Overlay de proteção do player público — aparece sobre o vídeo quando
+   detectamos aba escondida / janela sem foco / PrintScreen. Fica escondido
+   por padrão, .is-visible ativa via JS por ~4s. Não impede captura, apenas
+   avisa (a proteção real é a watermark dentro do MP4). */
+.pv-player-stage { position: relative; }
+.pv-protection-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    color: #fff;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+    animation: pvFadeIn .18s ease-out;
+    text-align: center;
+    padding: 2rem;
+    &.is-visible { display: flex; }
+    .pv-protection-warn {
+        max-width: 480px;
+        i {
+            font-size: 4.5rem;
+            color: #ff9f43;
+            display: block;
+            margin-bottom: 1rem;
+        }
+        h3 {
+            font-weight: 700;
+            margin-bottom: .75rem;
+        }
+        p {
+            opacity: .85;
+            font-size: .95rem;
+        }
+    }
+}
+@keyframes pvFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
 

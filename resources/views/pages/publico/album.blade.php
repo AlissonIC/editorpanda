@@ -105,8 +105,28 @@
                                 <button type="button" class="pv-player-nav pv-player-prev" id="pv-player-prev" title="Anterior">
                                     <i class="bi bi-chevron-left"></i>
                                 </button>
-                                <video id="pv-player-video" controls playsinline preload="metadata"
+                                {{-- Player hardened: sem download, sem PiP, sem cast/AirPlay,
+                                     sem menu de contexto. Não é impossível burlar (screen-record
+                                     sempre é possível) — a proteção real são as watermarks
+                                     queimadas dentro do próprio vídeo. --}}
+                                <video id="pv-player-video"
+                                       controls playsinline preload="metadata"
+                                       controlslist="nodownload noremoteplayback noplaybackrate"
+                                       disablepictureinpicture
+                                       oncontextmenu="return false;"
                                        style="max-width:100%; max-height:100%; background:#000;"></video>
+                                {{-- Overlay de aviso quando detectamos tentativa de captura
+                                     (aba escondida, janela perdeu foco, PrintScreen). Não
+                                     impede captura de fato — o browser não expõe API pra isso
+                                     sem DRM — mas serve como deterrent/branding. --}}
+                                <div class="pv-protection-overlay" id="pv-protection-overlay">
+                                    <div class="pv-protection-warn">
+                                        <i class="bi bi-shield-lock-fill"></i>
+                                        <h3>Conteúdo protegido</h3>
+                                        <p class="mb-0">Capturas de tela e gravações são proibidas.<br>
+                                        As imagens contêm marcações que identificam o infrator.</p>
+                                    </div>
+                                </div>
                                 <button type="button" class="pv-player-nav pv-player-next" id="pv-player-next" title="Próximo">
                                     <i class="bi bi-chevron-right"></i>
                                 </button>

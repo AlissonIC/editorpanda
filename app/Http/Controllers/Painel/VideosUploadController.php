@@ -25,6 +25,9 @@ class VideosUploadController extends Controller
 
     private const MIMES = [
         'video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm',
+        // Imagens são aceitas no mesmo fluxo — o processamento converte
+        // cada imagem em um MP4 estático (still frame) com os mesmos overlays.
+        'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
     ];
 
     /**
@@ -99,6 +102,10 @@ class VideosUploadController extends Controller
                 'status' => Video::STATUS_ENVIANDO,
                 'upload_iniciado_em' => now(),
                 'parts_json' => [],
+                // Herda rotação/espelho default do álbum — o fotógrafo configura
+                // uma vez e todo upload já vai correto no processamento.
+                'rotacao' => (int) ($album->rotacao_padrao ?? 0),
+                'espelhado' => (bool) ($album->espelhado_padrao ?? false),
             ]);
 
             if ($disco === 's3') {
@@ -388,7 +395,12 @@ class VideosUploadController extends Controller
 
         ProcessarVideoJob::dispatch($video->id);
 
-        return response()->json(['message' => 'Upload concluído; vídeo na fila de processamento.']);
+        // Retorna o card do vídeo para o frontend inserir na lista sem reload.
+        $video->loadMissing('album:id,evento_id,nome', 'album.evento:id,nome');
+        return response()->json([
+            'message' => 'Upload concluído; vídeo na fila de processamento.',
+            'video' => $this->cardData($video->fresh()->loadMissing('album:id,evento_id,nome', 'album.evento:id,nome')),
+        ]);
     }
 
     /**
@@ -478,18 +490,26 @@ class VideosUploadController extends Controller
     }
 
     /**
-     * Ajusta a rotação manual do vídeo (0/90/180/270).
-     * Só tem efeito no próximo processamento. Se o vídeo já estiver concluído,
-     * o dono precisa clicar em "Reprocessar" para o VideoProcessor rodar de novo.
+     * Ajusta rotação + espelhamento manual do vídeo. Só tem efeito no próximo
+     * processamento — o dono precisa clicar em "Reprocessar" pra aplicar.
      */
-    public function setRotacao(Request $request, Video $video): JsonResponse
+    public function setTransformacao(Request $request, Video $video): JsonResponse
     {
         $this->autorizarVideo($video);
         $data = $request->validate([
-            'rotacao' => ['required', 'integer', 'in:0,90,180,270'],
+            'rotacao' => ['sometimes', 'integer', 'in:0,90,180,270'],
+            'espelhado' => ['sometimes', 'boolean'],
         ]);
-        $video->update(['rotacao' => (int) $data['rotacao']]);
-        return response()->json(['rotacao' => $video->rotacao]);
+
+        $update = [];
+        if (array_key_exists('rotacao', $data)) $update['rotacao'] = (int) $data['rotacao'];
+        if (array_key_exists('espelhado', $data)) $update['espelhado'] = (bool) $data['espelhado'];
+        if ($update) $video->update($update);
+
+        return response()->json([
+            'rotacao' => $video->rotacao,
+            'espelhado' => (bool) $video->espelhado,
+        ]);
     }
 
     /**
@@ -518,7 +538,7 @@ class VideosUploadController extends Controller
 
         // Local: Storage::disk('local')->response() já emite bytes e respeita Range
         return Storage::disk('local')->response($video->arquivo_original_path, null, [
-            'Content-Type' => 'video/mp4',
+            'Content-Type' => $this->contentTypeParaPath($video->arquivo_original_path),
         ]);
     }
 
@@ -599,21 +619,12 @@ class VideosUploadController extends Controller
 
         $perPage = (int) min(50, max(5, $request->input('per_page', 20)));
         $paginator = $album->videos()
-            ->select(['id', 'nome', 'status', 'disk', 'tamanho_bytes', 'thumbnail_path', 'rotacao', 'created_at'])
+            ->with('album:id,evento_id,nome', 'album.evento:id,nome')
+            ->select(['id', 'album_id', 'nome', 'status', 'disk', 'tamanho_bytes', 'thumbnail_path', 'arquivo_original_path', 'rotacao', 'espelhado', 'created_at'])
             ->orderByDesc('id')
             ->paginate($perPage);
 
-        $videos = collect($paginator->items())->map(fn ($v) => [
-            'id' => $v->id,
-            'nome' => $v->nome,
-            'status' => $v->status,
-            'disk' => $v->disk,
-            'tamanho_bytes' => (int) $v->tamanho_bytes,
-            'tamanho_humano' => $this->formatBytes((int) $v->tamanho_bytes),
-            'thumbnail_url' => $v->thumbnail_path ? route('painel.videos.thumbnail.serve', $v) : null,
-            'rotacao' => (int) $v->rotacao,
-            'created_at' => $v->created_at?->format('d/m/Y H:i'),
-        ]);
+        $videos = collect($paginator->items())->map(fn ($v) => $this->cardData($v));
 
         $user = auth()->user();
         return response()->json([
@@ -634,6 +645,42 @@ class VideosUploadController extends Controller
     }
 
     /**
+     * Status em lote — usado pelo polling do painel de envio pra atualizar
+     * badges (pendente → processando → concluido/falhou) sem recarregar a lista.
+     *
+     * Endpoint deliberadamente barato: só id/status/erro_msg, indexado por
+     * (album_id, id). Ideal pra chamadas de 3–5s vindo de várias abas.
+     */
+    public function statusBatch(Request $request, Album $album): JsonResponse
+    {
+        abort_unless($album->user_id === auth()->id() || auth()->user()->isAdmin(), 404);
+
+        $ids = collect(explode(',', (string) $request->query('ids', '')))
+            ->map(fn ($x) => (int) trim($x))
+            ->filter(fn ($x) => $x > 0)
+            ->unique()
+            ->take(200)
+            ->values()
+            ->all();
+
+        if (empty($ids)) {
+            return response()->json(['videos' => []]);
+        }
+
+        $videos = $album->videos()
+            ->whereIn('id', $ids)
+            ->select(['id', 'status', 'erro_msg'])
+            ->get()
+            ->map(fn ($v) => [
+                'id' => (int) $v->id,
+                'status' => $v->status,
+                'erro_msg' => $v->erro_msg,
+            ]);
+
+        return response()->json(['videos' => $videos]);
+    }
+
+    /**
      * Retorna somente os IDs de vídeos de um álbum — usado pelo "selecionar tudo"
      * no frontend para abranger todas as páginas.
      */
@@ -644,6 +691,62 @@ class VideosUploadController extends Controller
         $ids = $album->videos()->pluck('id')->all();
 
         return response()->json(['ids' => $ids, 'total' => count($ids)]);
+    }
+
+    /**
+     * Reprocessa vários vídeos de uma vez (bulk action).
+     * Só aceita vídeos em status concluido/falhou — em processamento seria noop.
+     */
+    public function bulkReprocessar(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $query = Video::query()
+            ->whereIn('id', $data['ids'])
+            ->whereIn('status', [Video::STATUS_CONCLUIDO, Video::STATUS_FALHOU]);
+
+        if (! auth()->user()->isAdmin()) {
+            $query->where('user_id', auth()->id());
+        }
+
+        $ids = $query->pluck('id')->all();
+        if (empty($ids)) {
+            return response()->json(['message' => 'Nenhum vídeo elegível para reprocessar.'], 422);
+        }
+
+        // Marca como pendente em batch (1 UPDATE) e enfileira 1 job por vídeo.
+        Video::whereIn('id', $ids)->update([
+            'status' => Video::STATUS_PENDENTE,
+            'erro_msg' => null,
+        ]);
+        foreach ($ids as $id) {
+            \App\Jobs\ProcessarVideoJob::dispatch($id);
+        }
+
+        return response()->json([
+            'message' => count($ids) . ' vídeo(s) enviado(s) para reprocessamento.',
+            'reprocessados' => count($ids),
+        ]);
+    }
+
+    /**
+     * Atualiza rotação/espelhamento padrão do álbum. Novos uploads herdam.
+     */
+    public function setDefaults(Request $request, Album $album): JsonResponse
+    {
+        $this->autorizarUploader($album);
+        $data = $request->validate([
+            'rotacao_padrao' => ['sometimes', 'integer', 'in:0,90,180,270'],
+            'espelhado_padrao' => ['sometimes', 'boolean'],
+        ]);
+        $album->update($data);
+        return response()->json([
+            'rotacao_padrao' => (int) $album->rotacao_padrao,
+            'espelhado_padrao' => (bool) $album->espelhado_padrao,
+        ]);
     }
 
     /**
@@ -687,6 +790,50 @@ class VideosUploadController extends Controller
     private function tempDir(Video $video): string
     {
         return "temp/videos/{$video->id}";
+    }
+
+    private function contentTypeParaPath(string $path): string
+    {
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: '');
+        return match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png'         => 'image/png',
+            'webp'        => 'image/webp',
+            'heic'        => 'image/heic',
+            'heif'        => 'image/heif',
+            'mov'         => 'video/quicktime',
+            'mkv'         => 'video/x-matroska',
+            'webm'        => 'video/webm',
+            default       => 'video/mp4',
+        };
+    }
+
+    private function pathEhImagem(?string $path): bool
+    {
+        $ext = strtolower(pathinfo((string) $path, PATHINFO_EXTENSION) ?: '');
+        return in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true);
+    }
+
+    /**
+     * Formato do card usado tanto na listagem paginada quanto no /complete
+     * (pra que o frontend consiga inserir o card recém-criado sem full reload).
+     */
+    private function cardData(Video $v): array
+    {
+        return [
+            'id' => $v->id,
+            'nome' => $v->nome_exibicao,
+            'nome_original' => $v->nome,
+            'status' => $v->status,
+            'disk' => $v->disk,
+            'tamanho_bytes' => (int) $v->tamanho_bytes,
+            'tamanho_humano' => $this->formatBytes((int) $v->tamanho_bytes),
+            'thumbnail_url' => $v->thumbnail_path ? route('painel.videos.thumbnail.serve', $v) : null,
+            'rotacao' => (int) $v->rotacao,
+            'espelhado' => (bool) $v->espelhado,
+            'is_imagem' => $this->pathEhImagem($v->arquivo_original_path),
+            'created_at' => $v->created_at?->format('d/m/Y H:i'),
+        ];
     }
 
     /**

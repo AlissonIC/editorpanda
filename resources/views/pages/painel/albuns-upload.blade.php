@@ -47,15 +47,41 @@
                         <i class="bi bi-cloud-arrow-up"></i>
                     </div>
                     <div class="dz-text">
-                        <h5 class="fw-bold mb-1">Arraste vídeos ou clique para adicionar</h5>
+                        <h5 class="fw-bold mb-1">Arraste vídeos ou imagens, ou clique para adicionar</h5>
                         <p class="small text-muted mb-0">
-                            MP4, MOV, MKV ou WEBM · envio em partes — até 300&nbsp;MB por arquivo
+                            Vídeo (MP4, MOV, MKV, WEBM) ou imagem (JPG, PNG, WEBP, HEIC) · envio em partes — até 300&nbsp;MB por arquivo
                         </p>
                     </div>
                     <button type="button" class="btn btn-dark-panda dz-btn" id="btn-select">
                         <i class="bi bi-plus-lg me-1"></i> Adicionar
                     </button>
-                    <input type="file" id="file-input" class="d-none" accept="video/mp4,video/quicktime,video/x-matroska,video/webm" multiple>
+                    <input type="file" id="file-input" class="d-none"
+                           accept="video/mp4,video/quicktime,video/x-matroska,video/webm,image/jpeg,image/png,image/webp,image/heic,image/heif"
+                           multiple>
+                </div>
+
+                {{-- Defaults do álbum: rotação/espelho aplicados a todo novo upload.
+                     Configura uma vez, todo vídeo já sai correto. --}}
+                <div class="pv-defaults-bar" id="pv-defaults"
+                     data-url="{{ route('painel.albuns.defaults', $album) }}"
+                     data-rotacao="{{ (int) $album->rotacao_padrao }}"
+                     data-espelhado="{{ $album->espelhado_padrao ? '1' : '0' }}">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="small text-muted"><i class="bi bi-gear me-1"></i>Aplicar em novos uploads:</span>
+                        <select id="pv-default-rot" class="form-select form-select-sm" style="width:auto;">
+                            <option value="0">Sem rotação</option>
+                            <option value="90">↻ 90° horário</option>
+                            <option value="180">↻ 180°</option>
+                            <option value="270">↺ 90° anti-horário</option>
+                        </select>
+                        <div class="form-check form-check-inline m-0">
+                            <input class="form-check-input" type="checkbox" id="pv-default-mirror">
+                            <label class="form-check-label small" for="pv-default-mirror">Espelhar</label>
+                        </div>
+                        <span class="small text-success ms-2 d-none" id="pv-default-saved">
+                            <i class="bi bi-check-lg"></i> Salvo
+                        </span>
+                    </div>
                 </div>
             </div>
         @endif
@@ -105,6 +131,10 @@
                             <li><a class="dropdown-item js-bulk-merge" href="#"><i class="bi bi-collection-play me-2"></i>Mesclar em 1 vídeo (async)</a></li>
                         </ul>
                     </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="pv-bulk-reprocess"
+                            data-url="{{ route('painel.videos.bulk-reprocessar') }}">
+                        <i class="bi bi-arrow-repeat me-1"></i>Reprocessar
+                    </button>
                     <button type="button" class="btn btn-sm btn-danger" id="pv-bulk-delete">
                         <i class="bi bi-trash me-1"></i>Remover selecionados
                     </button>
@@ -139,6 +169,7 @@
             id="storage-widget"
             class="panda-card mb-3"
             data-list-url="{{ route('painel.albuns.videos.list', $album) }}"
+            data-status-url="{{ route('painel.albuns.videos.status', $album) }}"
         >
             <div class="d-flex align-items-center justify-content-between mb-2">
                 <h6 class="fw-bold mb-0">Armazenamento</h6>

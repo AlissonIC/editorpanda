@@ -176,8 +176,12 @@ class AlbunsController extends Controller
         $this->authorize($album);
 
         $request->validate([
-            // 300 MB (307200 KB)
-            'arquivo' => ['required', 'file', 'mimetypes:video/mp4,video/quicktime,video/x-matroska,video/webm', 'max:307200'],
+            // 300 MB (307200 KB) — aceita vídeos e imagens (imagem vira MP4 estático no processamento)
+            'arquivo' => [
+                'required', 'file',
+                'mimetypes:video/mp4,video/quicktime,video/x-matroska,video/webm,image/jpeg,image/png,image/webp,image/heic,image/heif',
+                'max:307200',
+            ],
         ]);
 
         $tamanho = (int) $request->file('arquivo')->getSize();

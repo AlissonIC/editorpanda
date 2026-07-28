@@ -2,10 +2,67 @@
  * extractVideoThumbnail — gera um JPEG quadrado (default 150x150) do frame
  * localizado a ~10% da duração do vídeo. Usa o <video> nativo + canvas.
  *
+ * Se `file` for uma imagem, delega para `extractImageThumbnail` (mesmo formato
+ * de saída — o backend não distingue).
+ *
  * Retorna um Blob (image/jpeg). Se falhar (formato não suportado, timeout, etc.),
  * rejeita a Promise — o chamador pode ignorar e seguir sem thumbnail.
  */
-export function extractVideoThumbnail(file, {
+export function extractVideoThumbnail(file, opts = {}) {
+    if ((file?.type || '').startsWith('image/')) {
+        return extractImageThumbnail(file, opts);
+    }
+    return _extractFromVideo(file, opts);
+}
+
+/**
+ * extractImageThumbnail — carrega a imagem via <img> e faz cover-crop 150x150.
+ * Mesmo contrato de retorno que a versão de vídeo.
+ */
+export function extractImageThumbnail(file, {
+    size = 150,
+    quality = 0.85,
+    timeoutMs = 20_000,
+} = {}) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        let finished = false;
+        const cleanup = () => { finished = true; try { URL.revokeObjectURL(url); } catch {} };
+        const done = (r) => { if (!finished) { cleanup(); resolve(r); } };
+        const fail = (e) => { if (!finished) { cleanup(); reject(e); } };
+
+        const timer = setTimeout(() => fail(new Error('thumbnail timeout')), timeoutMs);
+
+        img.addEventListener('error', () => { clearTimeout(timer); fail(new Error('image decode error')); });
+        img.addEventListener('load', () => {
+            clearTimeout(timer);
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = size; canvas.height = size;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, size, size);
+
+                const iw = img.naturalWidth || 1;
+                const ih = img.naturalHeight || 1;
+                const scale = Math.max(size / iw, size / ih);
+                const dw = iw * scale;
+                const dh = ih * scale;
+                ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+
+                canvas.toBlob((blob) => {
+                    if (!blob) return fail(new Error('canvas.toBlob() vazio'));
+                    done(blob);
+                }, 'image/jpeg', quality);
+            } catch (e) { fail(e); }
+        });
+
+        img.src = url;
+    });
+}
+
+function _extractFromVideo(file, {
     size = 150,
     quality = 0.85,
     seekPct = 0.1,
