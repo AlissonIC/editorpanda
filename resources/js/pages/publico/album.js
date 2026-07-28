@@ -8,8 +8,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const checkoutUrl = root.dataset.checkoutUrl;
     const preco = parseFloat(root.dataset.preco || '0');
     const gratis = root.dataset.gratis === '1';
+    // Escada de desconto [{qtd, percentual}, ...] — ordenada asc por qtd
+    let descontosEscada = [];
+    try { descontosEscada = JSON.parse(root.dataset.descontos || '[]') || []; } catch { descontosEscada = []; }
+    descontosEscada.sort((a, b) => a.qtd - b.qtd);
+
     const btn = document.getElementById('pv-checkout-btn');
     const selCount = document.getElementById('pv-sel-count');
+    const subtotalEl = document.getElementById('pv-subtotal');
+    const descontoRow = document.getElementById('pv-desconto-row');
+    const descontoLabel = document.getElementById('pv-desconto-label');
+    const descontoEl = document.getElementById('pv-desconto');
     const totalEl = document.getElementById('pv-total'); // pode ser null se gratis
     const form = document.getElementById('pv-checkout-form');
     const whats = form.querySelector('[name="whatsapp"]');
@@ -17,12 +26,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const brl = (n) => n.toFixed(2).replace('.', ',');
 
+    function pctDescontoPara(qtd) {
+        let melhor = 0;
+        for (const d of descontosEscada) {
+            if (qtd >= (d.qtd | 0)) melhor = parseFloat(d.percentual) || 0;
+        }
+        return melhor;
+    }
+
     function refresh() {
         const marcados = root.querySelectorAll('.pv-video-check:checked');
         const qtd = marcados.length;
-        const total = qtd * preco;
+        const subtotal = qtd * preco;
+        const pct = pctDescontoPara(qtd);
+        const desconto = +(subtotal * pct / 100).toFixed(2);
+        const total = subtotal - desconto;
+
         selCount.textContent = qtd;
+        if (subtotalEl) subtotalEl.textContent = brl(subtotal);
         if (totalEl) totalEl.textContent = brl(total);
+        if (descontoRow) {
+            descontoRow.classList.toggle('d-none', desconto <= 0);
+            if (descontoEl) descontoEl.textContent = brl(desconto);
+            if (descontoLabel) descontoLabel.textContent = `Desconto (${pct}%)`;
+        }
         btn.disabled = qtd === 0;
 
         marcados.forEach((cb) => cb.closest('.pv-video-card').classList.add('is-selected'));
@@ -219,11 +246,19 @@ document.addEventListener('DOMContentLoaded', () => {
             email: form.email.value.trim(),
             whatsapp: form.whatsapp.value.trim() || null,
             video_ids: ids,
+            codigo_cupom: form.codigo_cupom?.value.trim().toUpperCase() || null,
         };
 
         try {
             const { data } = await axios.post(checkoutUrl, payload);
-            // Backend retorna URL assinada temporária — usar como está
+            if (data.gratis) {
+                // Evento gratuito: backend enviou links por e-mail — não há
+                // página de confirmação. Mostra toast e reseta o formulário.
+                window.showToast(data.message || 'Enviamos por e-mail em instantes.', 'success');
+                btn.textContent = 'Enviado ✓';
+                setTimeout(() => window.location.reload(), 1500);
+                return;
+            }
             window.location.href = data.redirect;
         } catch (err) {
             const msg = err.response?.data?.message

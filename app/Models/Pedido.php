@@ -16,6 +16,9 @@ class Pedido extends Model
         'comprador_email',
         'comprador_whatsapp',
         'total',
+        'cupom_id',
+        'desconto_cupom',
+        'desconto_quantidade',
         'status',
         'gateway_id',
         'pago_em',
@@ -25,6 +28,8 @@ class Pedido extends Model
     {
         return [
             'total' => 'decimal:2',
+            'desconto_cupom' => 'decimal:2',
+            'desconto_quantidade' => 'decimal:2',
             'pago_em' => 'datetime',
         ];
     }

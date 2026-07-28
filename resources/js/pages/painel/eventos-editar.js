@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { bindMoney } from '../../lib/masks';
+import { initDescontosEditor } from '../../lib/descontos-editor';
 
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('form-evento-editar');
@@ -9,13 +10,16 @@ document.addEventListener('DOMContentLoaded', () => {
     form.querySelectorAll('input[data-mask="money"]').forEach(bindMoney);
     document.querySelectorAll('#modalAlbumEvento input[data-mask="money"]').forEach(bindMoney);
 
+    // ============ Escada de desconto por quantidade ============
+    initDescontosEditor(document.querySelector('#ev-descontos-editor .descontos-editor'));
+
     // ============ Preview do celular (Reels) ============
     const reelsLogo = document.getElementById('reels-logo');
     const reelsGradient = document.getElementById('reels-gradient');
 
-    // ============ Seletor de posição do logo ============
+    // ============ Seletor de posição da marca d'água ============
     const posGrid = form.querySelector('.pos-grid');
-    const posInput = form.querySelector('input[name="logo_posicao"]');
+    const posInput = form.querySelector('input[name="watermark_posicao"]');
     posGrid?.addEventListener('click', (e) => {
         const cell = e.target.closest('.pos-cell');
         if (!cell) return;
@@ -64,7 +68,19 @@ document.addEventListener('DOMContentLoaded', () => {
         form.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
         form.querySelectorAll('.invalid-feedback[data-field]').forEach((el) => el.textContent = '');
 
-        const data = Object.fromEntries(new FormData(form));
+        const data = {};
+        // FormData → objeto, respeitando arrays em `name[i][key]`
+        for (const [name, value] of new FormData(form).entries()) {
+            const arrMatch = name.match(/^([^\[]+)\[(\d+)\]\[([^\]]+)\]$/);
+            if (arrMatch) {
+                const [, key, idx, subKey] = arrMatch;
+                data[key] = data[key] || [];
+                data[key][idx] = data[key][idx] || {};
+                data[key][idx][subKey] = value;
+            } else {
+                data[name] = value;
+            }
+        }
         // Máscara → raw
         form.querySelectorAll('input[data-mask="money"][name]').forEach((el) => {
             data[el.name] = el.dataset.rawValue ?? '0.00';
@@ -73,6 +89,10 @@ document.addEventListener('DOMContentLoaded', () => {
         form.querySelectorAll('input[type=checkbox][name]').forEach((cb) => {
             data[cb.name] = cb.checked ? 1 : 0;
         });
+        // Filtra buracos que sobraram no array de descontos (índices removidos)
+        if (Array.isArray(data.descontos_quantidade)) {
+            data.descontos_quantidade = data.descontos_quantidade.filter(Boolean);
+        }
 
         const url = form.dataset.url;
         statusEl.textContent = 'Salvando…';
@@ -98,48 +118,85 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ============ Upload de logo ============
+    // ============ Upload da MARCA D'ÁGUA (seção Processamento) ============
+    // O input mantém o id "ev-logo-input" por compat com o CSS/DOM antigos,
+    // mas o campo enviado é "watermark" e o endpoint é o novo.
     const logoInput = document.getElementById('ev-logo-input');
     const logoPreview = document.getElementById('ev-logo-preview');
     const logoRemove = document.getElementById('ev-logo-remove');
     logoInput?.addEventListener('change', async () => {
         const file = logoInput.files?.[0];
         if (!file) return;
+        const fieldName = logoInput.dataset.field || 'watermark';
         const fd = new FormData();
-        fd.append('logo', file);
+        fd.append(fieldName, file);
         try {
             const { data } = await axios.post(logoInput.dataset.url, fd);
+            const url = data.watermark_url || data.logo_url;
             const cacheBust = `?v=${Date.now()}`;
-            logoPreview.style.backgroundImage = `url("${data.logo_url}${cacheBust}")`;
+            logoPreview.style.backgroundImage = `url("${url}${cacheBust}")`;
             logoPreview.classList.add('has-logo');
             logoPreview.textContent = '';
             logoRemove.classList.remove('d-none');
             // Sincroniza preview do celular
             if (reelsLogo) {
-                reelsLogo.style.backgroundImage = `url("${data.logo_url}${cacheBust}")`;
+                reelsLogo.style.backgroundImage = `url("${url}${cacheBust}")`;
                 reelsLogo.classList.remove('d-none');
             }
-            window.showToast('Logo enviado.', 'success');
+            window.showToast('Marca d\'água enviada.', 'success');
         } catch (err) {
-            window.showToast(err.response?.data?.errors?.logo?.[0] || 'Erro ao enviar logo.', 'error');
+            window.showToast(err.response?.data?.errors?.watermark?.[0] || err.response?.data?.errors?.logo?.[0] || 'Erro ao enviar marca d\'água.', 'error');
         } finally {
             logoInput.value = '';
         }
     });
     logoRemove?.addEventListener('click', async () => {
-        if (!confirm('Remover logo?')) return;
+        if (!confirm('Remover marca d\'água?')) return;
         try {
             await axios.delete(logoInput.dataset.deleteUrl);
             logoPreview.style.backgroundImage = '';
             logoPreview.classList.remove('has-logo');
             logoPreview.innerHTML = '<i class="bi bi-image"></i>';
             logoRemove.classList.add('d-none');
-            // Some do preview do celular
             if (reelsLogo) {
                 reelsLogo.style.backgroundImage = '';
                 reelsLogo.classList.add('d-none');
             }
-            window.showToast('Logo removido.', 'success');
+            window.showToast('Marca d\'água removida.', 'success');
+        } catch { window.showToast('Erro ao remover.', 'error'); }
+    });
+
+    // ============ Upload da LOGO DE BRANDING (card lateral) ============
+    const brandLogoInput = document.getElementById('ev-brand-logo-input');
+    const brandLogoPreview = document.getElementById('ev-brand-logo-preview');
+    const brandLogoRemove = document.getElementById('ev-brand-logo-remove');
+    brandLogoInput?.addEventListener('change', async () => {
+        const file = brandLogoInput.files?.[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('logo', file);
+        try {
+            const { data } = await axios.post(brandLogoPreview.dataset.url, fd);
+            brandLogoPreview.style.backgroundImage = `url("${data.logo_url}?v=${Date.now()}")`;
+            brandLogoPreview.classList.add('has-capa');
+            brandLogoPreview.textContent = '';
+            brandLogoRemove.classList.remove('d-none');
+            window.showToast('Logo enviada.', 'success');
+        } catch (err) {
+            window.showToast(err.response?.data?.errors?.logo?.[0] || 'Erro ao enviar logo.', 'error');
+        } finally {
+            brandLogoInput.value = '';
+        }
+    });
+    brandLogoRemove?.addEventListener('click', async () => {
+        if (!confirm('Remover logo do evento?')) return;
+        try {
+            await axios.delete(brandLogoPreview.dataset.deleteUrl);
+            brandLogoPreview.style.backgroundImage = '';
+            brandLogoPreview.classList.remove('has-capa');
+            brandLogoPreview.innerHTML = '<i class="bi bi-image"></i>';
+            brandLogoRemove.classList.add('d-none');
+            window.showToast('Logo removida.', 'success');
         } catch { window.showToast('Erro ao remover.', 'error'); }
     });
 

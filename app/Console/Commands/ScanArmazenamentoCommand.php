@@ -106,10 +106,22 @@ class ScanArmazenamentoCommand extends Command
                 }
             });
 
-        // Logos de eventos
+        // Logos de branding do evento
         Evento::where('logo_disk', $disk)
             ->whereNotNull('logo_path')
             ->pluck('logo_path')
+            ->each(function ($p) use (&$pathsConhecidos) { $pathsConhecidos[$p] = true; });
+
+        // Marcas d'água (imagem sobreposta pelo FFmpeg)
+        Evento::where('watermark_disk', $disk)
+            ->whereNotNull('watermark_path')
+            ->pluck('watermark_path')
+            ->each(function ($p) use (&$pathsConhecidos) { $pathsConhecidos[$p] = true; });
+
+        // Capas dos eventos
+        Evento::where('capa_disk', $disk)
+            ->whereNotNull('capa_path')
+            ->pluck('capa_path')
             ->each(function ($p) use (&$pathsConhecidos) { $pathsConhecidos[$p] = true; });
 
         // Fotos de perfil (só disk=public)

@@ -117,16 +117,27 @@
                         notificação no seu WhatsApp. Simples assim!
                     </p>
                 </div>
+                @php
+                    // Puxa do plano ativo mais barato — se não houver, usa placeholder.
+                    $planoMinPreco = $planos->min('preco');
+                    $planoMinTaxa = $planos->min('taxa_por_venda');
+                    $precoStr = $planoMinPreco !== null
+                        ? 'R$ ' . number_format((float) $planoMinPreco, 2, ',', '.')
+                        : '—';
+                    $taxaStr = $planoMinTaxa !== null
+                        ? number_format((float) $planoMinTaxa, (fmod((float)$planoMinTaxa, 1) === 0.0 ? 0 : 2), ',', '.') . '%'
+                        : '—';
+                @endphp
                 <div class="col-lg-6">
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-icon icon-success"><i class="bi bi-cash-coin"></i></div>
-                            <div class="stat-value">R$ 99,90</div>
+                            <div class="stat-value">{{ $precoStr }}</div>
                             <div class="stat-label">Mensalidade a partir de</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-icon icon-info"><i class="bi bi-percent"></i></div>
-                            <div class="stat-value">10%</div>
+                            <div class="stat-value">{{ $taxaStr }}</div>
                             <div class="stat-label">Por venda</div>
                         </div>
                         <div class="stat-card">

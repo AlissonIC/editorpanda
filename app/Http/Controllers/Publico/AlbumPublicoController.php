@@ -12,7 +12,9 @@ class AlbumPublicoController extends Controller
 {
     public function show(Album $album): View
     {
-        $album->load('evento:id,nome,slug,preco_por_video,status');
+        // Carregamos os campos que o partial hero-evento precisa (capa, logo,
+        // localização, data) sem trazer a tabela toda.
+        $album->load('evento:id,nome,slug,preco_por_video,status,localizacao_cidade,localizacao_estado,data,capa_path,capa_disk,logo_path,logo_disk');
         abort_unless($album->status === 'publicado', 404);
         abort_unless($album->evento?->status === 'ativo', 404);
 

@@ -20,7 +20,7 @@ class VideosUploadController extends Controller
     // Limites: mínimo do S3 é 5 MB por parte (exceto a última). Máx 10.000 partes.
     private const CHUNK_MIN = 5 * 1024 * 1024;         // 5 MB
     private const CHUNK_MAX = 100 * 1024 * 1024;       // 100 MB (bem acima do chunk padrão de 5MB)
-    private const FILE_MAX = 300 * 1024 * 1024;        // 300 MB
+    private const FILE_MAX = 1024 * 1024 * 1024;       // 1 GB
     private const PARTS_MAX = 10_000;
 
     private const MIMES = [

@@ -185,10 +185,12 @@ class VideoProcessor
         $ev = $album?->evento;
 
         return [
-            'logo_path' => $ev?->logo_path,
-            'logo_disk' => $ev?->logo_disk,
-            'logo_posicao' => $ev?->logo_posicao ?: 'top-right',
-            'logo_escala' => (float) ($ev?->logo_escala ?: 0.15),
+            // O "logo" no config interno do processor é a MARCA D'ÁGUA queimada
+            // no vídeo. A logo de branding do evento (público) é campo separado.
+            'logo_path' => $ev?->watermark_path,
+            'logo_disk' => $ev?->watermark_disk,
+            'logo_posicao' => $ev?->watermark_posicao ?: 'top-right',
+            'logo_escala' => (float) ($ev?->watermark_escala ?: 0.15),
             'gradiente_habilitado' => (bool) ($ev?->gradiente_habilitado ?? false),
             'rosto_centralizar' => (bool) ($ev?->rosto_centralizar ?? false),
         ];
@@ -428,9 +430,9 @@ class VideoProcessor
             'scale=540:960:flags=lanczos',
         ];
 
-        // Watermarks ANIMADAS: 6 faixas em Y fixos, X percorre continuamente.
+        // Watermarks ANIMADAS: 10 faixas em Y fixos, X percorre continuamente.
         // Alternamos direção (LTR ↔ RTL) e usamos velocidades/fases diferentes
-        // por faixa. Em qualquer frame há 6+ textos visíveis em posições que
+        // por faixa. Em qualquer frame há 10 textos visíveis em posições que
         // MUDAM a cada frame → screen-record captura tudo, mas o pattern não
         // fica no mesmo pixel dois frames seguidos, então mascarar em pós
         // é impraticável (blur/inpainting destruiria o vídeo inteiro).
@@ -439,27 +441,32 @@ class VideoProcessor
         // RTL: x = W - mod(t*V + phase, W+tw)      → entra à direita, sai à esquerda
         $faixas = [
             // [y_fracional, velocidade_px_s, phase_px, alpha, direcao]
-            [0.10,  90,   0, 0.60, 'ltr'],
-            [0.24, 110, 200, 0.60, 'rtl'],
-            [0.38,  80,   0, 0.60, 'ltr'],
-            [0.62, 100, 350, 0.60, 'rtl'],
-            [0.76,  95, 100, 0.60, 'ltr'],
-            [0.90,  85, 450, 0.60, 'rtl'],
+            [0.06,  90,   0, 0.55, 'ltr'],
+            [0.14, 110, 200, 0.55, 'rtl'],
+            [0.22,  80, 100, 0.55, 'ltr'],
+            [0.30, 100, 300, 0.55, 'rtl'],
+            [0.38,  85,   0, 0.55, 'ltr'],
+            [0.62,  95, 400, 0.55, 'rtl'],
+            [0.70,  75, 150, 0.55, 'ltr'],
+            [0.78, 105, 250, 0.55, 'rtl'],
+            [0.86,  80,  50, 0.55, 'ltr'],
+            [0.94,  95, 350, 0.55, 'rtl'],
         ];
         foreach ($faixas as [$yFrac, $vel, $phase, $alpha, $dir]) {
             $xExpr = $dir === 'ltr'
                 ? "mod(t*{$vel}+{$phase}\\,w+tw)-tw"
                 : "w-mod(t*{$vel}+{$phase}\\,w+tw)";
             $filtros[] = sprintf(
-                "drawtext=fontfile='%s':text='%s':fontsize=26:fontcolor=white@%.2f:borderw=2:bordercolor=black@0.70:x='%s':y=h*%.2f-th/2",
+                "drawtext=fontfile='%s':text='%s':fontsize=22:fontcolor=white@%.2f:borderw=2:bordercolor=black@0.70:x='%s':y=h*%.2f-th/2",
                 $fontEsc, $textoEsc, $alpha, $xExpr, $yFrac,
             );
         }
 
         // Aviso central "respirando": alpha oscila entre 0.54 e 0.90 a cada
         // segundo — dificulta detecção automática de watermark estático.
+        // Fontsize reduzido pra caber em qualquer preview (540px de largura).
         $filtros[] = sprintf(
-            "drawtext=fontfile='%s':text='%s':fontsize=32:fontcolor=white:alpha='0.72+0.18*sin(2*PI*t)':borderw=3:bordercolor=black@0.9:x=(w-tw)/2:y=(h-th)/2",
+            "drawtext=fontfile='%s':text='%s':fontsize=22:fontcolor=white:alpha='0.72+0.18*sin(2*PI*t)':borderw=2:bordercolor=black@0.9:x=(w-tw)/2:y=(h-th)/2",
             $fontEsc, $avisoEsc,
         );
 

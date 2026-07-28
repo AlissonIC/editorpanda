@@ -5,13 +5,17 @@ namespace App\Http\Controllers\Publico;
 use App\Http\Controllers\Controller;
 use App\Models\Album;
 use App\Models\Comprador;
+use App\Models\Cupom;
 use App\Models\Pedido;
 use App\Models\PedidoItem;
 use App\Models\User;
+use App\Models\Video;
 use App\Notifications\CompraFinalizadaNotification;
+use App\Notifications\CompraGratuitaNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
 class CheckoutController extends Controller
@@ -26,6 +30,7 @@ class CheckoutController extends Controller
             'whatsapp' => ['nullable', 'string', 'max:20'],
             'video_ids' => ['required', 'array', 'min:1', 'max:200'],
             'video_ids.*' => ['integer'],
+            'codigo_cupom' => ['nullable', 'string', 'max:60'],
         ]);
 
         // Dedup dentro do request
@@ -70,7 +75,35 @@ class CheckoutController extends Controller
                 $albumLocked->load('evento');
             }
             $preco = $albumLocked->precoEfetivoPorVideo();
-            $total = round($preco * $videos->count(), 2);
+            $qtd = $videos->count();
+            $subtotal = round($preco * $qtd, 2);
+
+            // Desconto por quantidade (escada configurada no álbum ou herdada do evento)
+            $descontoQtdPct = $albumLocked->percentualDescontoQuantidade($qtd);
+            $descontoQtd = round($subtotal * ($descontoQtdPct / 100), 2);
+
+            // Desconto por CUPOM (aplicado após qtd, sobre o valor já com desconto).
+            // SEGURANÇA: resolvemos o cupom já filtrando por user_id do álbum —
+            // impossível usar cupom de outro produtor mesmo forjando o código.
+            $cupom = null;
+            $descontoCupom = 0.0;
+            if (! empty($data['codigo_cupom'])) {
+                $cupom = Cupom::where('user_id', $albumLocked->user_id)
+                    ->where('codigo', strtoupper(trim($data['codigo_cupom'])))
+                    ->lockForUpdate()
+                    ->first();
+                if (! $cupom) {
+                    abort(response()->json(['message' => 'Cupom inválido.'], 422));
+                }
+                $ok = $cupom->podeSerUsadoEm($albumLocked, $email);
+                if (! $ok['ok']) {
+                    abort(response()->json(['message' => $ok['motivo']], 422));
+                }
+                $descontoCupom = $cupom->calcularDesconto($subtotal - $descontoQtd);
+            }
+
+            $total = round($subtotal - $descontoQtd - $descontoCupom, 2);
+            if ($total < 0) $total = 0.0;
             $ehGratis = $albumLocked->ehGratuito();
 
             // Anti-tampering: valida de novo com base no álbum bloqueado — se admin marcou
@@ -101,10 +134,18 @@ class CheckoutController extends Controller
                 'comprador_email' => $comprador->email,
                 'comprador_whatsapp' => $comprador->whatsapp,
                 'total' => $total,
+                'cupom_id' => $cupom?->id,
+                'desconto_cupom' => $descontoCupom > 0 ? $descontoCupom : null,
+                'desconto_quantidade' => $descontoQtd > 0 ? $descontoQtd : null,
                 'status' => 'pago',
                 'pago_em' => now(),
                 'gateway_id' => $ehGratis ? 'gratis' : null, // marca origem gratuita p/ relatórios
             ]);
+
+            // Incrementa uso do cupom (dentro da mesma transaction + lockForUpdate acima)
+            if ($cupom) {
+                $cupom->increment('usos_atuais');
+            }
 
             foreach ($videos as $v) {
                 PedidoItem::create([
@@ -133,7 +174,33 @@ class CheckoutController extends Controller
             return $pedido;
         });
 
-        // Magic link automático pós-compra
+        // FLUXO DE EVENTO GRATUITO: entrega direta por e-mail — o comprador NÃO
+        // vai pra área do comprador, recebe links assinados de download direto.
+        // Mais fricção-free pra fluxo de brinde/gratuito.
+        if ($album->ehGratuito()) {
+            $links = $videos->map(fn (Video $v) => [
+                'nome' => $v->fresh()->nome_exibicao,
+                'url' => URL::temporarySignedRoute(
+                    'publico.video.baixar-livre',
+                    now()->addDays(30),
+                    ['video' => $v->id],
+                ),
+            ])->all();
+
+            try {
+                $pedido->comprador?->notify(new CompraGratuitaNotification($pedido, $links));
+            } catch (\Throwable $e) {
+                \Log::warning('Falha ao enviar email gratuito', ['pedido' => $pedido->id, 'erro' => $e->getMessage()]);
+            }
+
+            return response()->json([
+                'pedido_id' => $pedido->id,
+                'gratis' => true,
+                'message' => 'Enviamos os arquivos por e-mail em instantes.',
+            ]);
+        }
+
+        // Magic link automático pós-compra (fluxo pago)
         [$tokenPlano] = \App\Models\AcessoToken::gerarPara(
             $pedido->comprador_email,
             $request->ip(),
@@ -158,6 +225,37 @@ class CheckoutController extends Controller
             'pedido_id' => $pedido->id,
             'redirect' => $redirectUrl,
         ]);
+    }
+
+    /**
+     * Download livre de vídeo/foto de EVENTO GRATUITO via URL assinada.
+     * Enviado por e-mail no fluxo do CompraGratuitaNotification.
+     * Middleware `signed` valida integridade + expiração; aqui checamos que
+     * o vídeo realmente pertence a um evento marcado como gratuito.
+     */
+    public function baixarGratis(Video $video)
+    {
+        $video->load('album.evento');
+        abort_unless($video->album?->evento?->ehGratuito(), 404);
+        abort_unless($video->status === 'concluido', 404);
+        abort_unless($video->arquivo_processado_path, 404);
+
+        $disk = $video->disk ?: 'local';
+        $path = $video->arquivo_processado_path;
+        $nome = $video->nomeArquivoDownload('processado');
+
+        if ($disk === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl($path, now()->addMinutes(15), [
+                    'ResponseContentDisposition' => 'attachment; filename="' . $nome . '"',
+                ]);
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+
+        return Storage::disk('local')->download($path, $nome);
     }
 
     public function confirmacao(Pedido $pedido, Request $request)

@@ -76,6 +76,7 @@ class EventosController extends Controller
 
         $payload = $evento->toArray();
         $payload['logo_url'] = $evento->logo_url;
+        $payload['watermark_url'] = $evento->watermark_url;
         $payload['capa_url'] = $evento->capa_url;
 
         return response()->json($payload);
@@ -191,7 +192,7 @@ class EventosController extends Controller
 
     private function validarDados(Request $request): array
     {
-        return $request->validate([
+        $dados = $request->validate([
             'nome' => ['required', 'string', 'max:255'],
             'descricao' => ['nullable', 'string', 'max:5000'],
             'localizacao_cidade' => ['nullable', 'string', 'max:120'],
@@ -199,11 +200,96 @@ class EventosController extends Controller
             'data' => ['nullable', 'date'],
             'status' => ['required', 'in:ativo,inativo'],
             'preco_por_video' => ['required', 'numeric', 'min:0', 'max:9999.99'],
-            'logo_posicao' => ['nullable', 'in:' . implode(',', Evento::POSICOES_LOGO)],
-            'logo_escala' => ['nullable', 'numeric', 'min:0.05', 'max:0.5'],
+            'watermark_posicao' => ['nullable', 'in:' . implode(',', Evento::POSICOES_WATERMARK)],
+            'watermark_escala' => ['nullable', 'numeric', 'min:0.05', 'max:0.5'],
             'gradiente_habilitado' => ['nullable', 'boolean'],
             'rosto_centralizar' => ['nullable', 'boolean'],
+            'descontos_quantidade' => ['nullable', 'array', 'max:10'],
+            'descontos_quantidade.*.qtd' => ['required_with:descontos_quantidade.*', 'integer', 'min:1', 'max:1000'],
+            'descontos_quantidade.*.percentual' => ['required_with:descontos_quantidade.*', 'numeric', 'min:0.01', 'max:100'],
         ]);
+
+        // Sanitiza: remove degraus vazios, ordena por qtd asc
+        if (! empty($dados['descontos_quantidade'])) {
+            $dados['descontos_quantidade'] = collect($dados['descontos_quantidade'])
+                ->map(fn ($d) => ['qtd' => (int) $d['qtd'], 'percentual' => (float) $d['percentual']])
+                ->sortBy('qtd')
+                ->values()
+                ->all();
+        }
+
+        return $dados;
+    }
+
+    // ---------- Watermark (marca d'água queimada no vídeo processado) ----------
+
+    public function uploadWatermark(Request $request, Evento $evento): JsonResponse
+    {
+        $this->authorize($evento);
+        abort_if(auth()->user()->isAdmin(), 403);
+
+        $request->validate([
+            'watermark' => ['required', 'image', 'mimes:png,jpg,jpeg,webp,svg', 'max:2048'],
+        ]);
+
+        $disco = Configuracao::storageDisk();
+
+        if ($evento->watermark_path) {
+            \App\Support\StorageCleanup::deleteAndVerify(
+                $evento->watermark_disk ?: 'local',
+                $evento->watermark_path,
+                'evento_watermark_replace',
+            );
+        }
+
+        $ext = strtolower($request->file('watermark')->extension() ?: 'png');
+        $ext = preg_replace('/[^a-z0-9]/', '', $ext) ?: 'png';
+        $path = sprintf('watermarks-eventos/%d/evento-%d-%s.%s',
+            auth()->id(), $evento->id, Str::random(8), $ext);
+
+        $request->file('watermark')->storeAs(dirname($path), basename($path), $disco);
+
+        $evento->update(['watermark_path' => $path, 'watermark_disk' => $disco]);
+
+        return response()->json([
+            'watermark_url' => $evento->fresh()->watermark_url,
+            'message' => 'Marca d\'água enviada.',
+        ]);
+    }
+
+    public function deleteWatermark(Evento $evento): JsonResponse
+    {
+        $this->authorize($evento);
+        abort_if(auth()->user()->isAdmin(), 403);
+
+        if ($evento->watermark_path) {
+            \App\Support\StorageCleanup::deleteAndVerify(
+                $evento->watermark_disk ?: 'local',
+                $evento->watermark_path,
+                'evento_watermark_delete',
+            );
+            $evento->update(['watermark_path' => null, 'watermark_disk' => null]);
+        }
+
+        return response()->json(['message' => 'Marca d\'água removida.']);
+    }
+
+    public function serveWatermark(Evento $evento)
+    {
+        abort_unless(auth()->user()->isAdmin() || $evento->user_id === auth()->id(), 404);
+        abort_unless($evento->watermark_path, 404);
+
+        $disco = $evento->watermark_disk ?: 'local';
+        if ($disco === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl($evento->watermark_path, now()->addMinutes(15));
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+
+        return Storage::disk('local')->response($evento->watermark_path);
     }
 
     // ---------- Capa (foto principal do evento) ----------

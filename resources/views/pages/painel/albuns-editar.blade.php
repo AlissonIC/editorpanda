@@ -102,6 +102,20 @@
                     </div>
                 </div>
             </div>
+
+            {{-- Desconto por quantidade (sobrescreve o do evento se preenchido) --}}
+            <div class="panda-card mb-4">
+                <h5 class="fw-bold mb-1">Desconto por quantidade</h5>
+                <p class="text-muted small mb-3">
+                    Deixe vazio pra herdar a escada do evento. Se preencher aqui, sobrescreve.
+                </p>
+                <div id="alb-descontos-editor">
+                    @include('partials.painel.descontos-quantidade-editor', [
+                        'descontos' => $album->descontos_quantidade ?? [],
+                        'namePrefix' => 'descontos_quantidade',
+                    ])
+                </div>
+            </div>
         </div>
 
         <div class="col-lg-4">

@@ -135,11 +135,23 @@ class AlbunsController extends Controller
             'preco' => ['required', 'numeric', 'min:0'],
             'preco_por_video' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
             'status' => ['required', 'in:rascunho,publicado'],
+            'descontos_quantidade' => ['nullable', 'array', 'max:10'],
+            'descontos_quantidade.*.qtd' => ['required_with:descontos_quantidade.*', 'integer', 'min:1', 'max:1000'],
+            'descontos_quantidade.*.percentual' => ['required_with:descontos_quantidade.*', 'numeric', 'min:0.01', 'max:100'],
         ]);
 
         // Preço vazio → null (herda do evento)
         if (! isset($data['preco_por_video']) || $data['preco_por_video'] === '' || $data['preco_por_video'] === null) {
             $data['preco_por_video'] = null;
+        }
+
+        // Sanitiza escada de desconto: remove degraus vazios, ordena por qtd
+        if (! empty($data['descontos_quantidade'])) {
+            $data['descontos_quantidade'] = collect($data['descontos_quantidade'])
+                ->map(fn ($d) => ['qtd' => (int) $d['qtd'], 'percentual' => (float) $d['percentual']])
+                ->sortBy('qtd')
+                ->values()
+                ->all();
         }
 
         abort_unless(auth()->user()->eventos()->whereKey($data['evento_id'])->exists(), 403);
@@ -176,11 +188,12 @@ class AlbunsController extends Controller
         $this->authorize($album);
 
         $request->validate([
-            // 300 MB (307200 KB) — aceita vídeos e imagens (imagem vira MP4 estático no processamento)
+            // 1 GB (1048576 KB) — aceita vídeos e imagens (imagem vira MP4 estático no processamento).
+            // Na prática esse endpoint legado quase nunca é usado (frontend usa multipart chunk).
             'arquivo' => [
                 'required', 'file',
                 'mimetypes:video/mp4,video/quicktime,video/x-matroska,video/webm,image/jpeg,image/png,image/webp,image/heic,image/heif',
-                'max:307200',
+                'max:1048576',
             ],
         ]);
 

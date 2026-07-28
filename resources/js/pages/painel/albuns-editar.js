@@ -1,11 +1,13 @@
 import axios from 'axios';
 import { bindMoney } from '../../lib/masks';
+import { initDescontosEditor } from '../../lib/descontos-editor';
 
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('form-album-editar');
     if (!form) return;
 
     form.querySelectorAll('input[data-mask="money"]').forEach(bindMoney);
+    initDescontosEditor(document.querySelector('#alb-descontos-editor .descontos-editor'));
 
     const eventos = JSON.parse(form.dataset.eventos || '[]');
     const eventoSelect = document.getElementById('alb-evento');
@@ -45,10 +47,25 @@ document.addEventListener('DOMContentLoaded', () => {
             precoInput.value = '';
         }
 
-        const data = Object.fromEntries(new FormData(form));
+        const data = {};
+        // FormData → objeto, respeitando arrays em `name[i][key]` (descontos_quantidade[])
+        for (const [name, value] of new FormData(form).entries()) {
+            const arrMatch = name.match(/^([^\[]+)\[(\d+)\]\[([^\]]+)\]$/);
+            if (arrMatch) {
+                const [, key, idx, subKey] = arrMatch;
+                data[key] = data[key] || [];
+                data[key][idx] = data[key][idx] || {};
+                data[key][idx][subKey] = value;
+            } else {
+                data[name] = value;
+            }
+        }
         form.querySelectorAll('input[data-mask="money"][name]').forEach((el) => {
             data[el.name] = el.dataset.rawValue ?? '';
         });
+        if (Array.isArray(data.descontos_quantidade)) {
+            data.descontos_quantidade = data.descontos_quantidade.filter(Boolean);
+        }
 
         statusEl.textContent = 'Salvando…';
         statusEl.className = 'text-center small text-muted mt-2';

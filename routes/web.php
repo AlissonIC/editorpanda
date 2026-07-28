@@ -31,6 +31,10 @@ Route::name('publico.')->group(function () {
         ->middleware('throttle:10,1')
         ->name('checkout.store');
     Route::get('/pedido/{pedido}', [Publico\CheckoutController::class, 'confirmacao'])->name('checkout.confirmacao');
+    // Download livre p/ eventos gratuitos — URL assinada enviada por email
+    Route::get('/v/{video}/gratis', [Publico\CheckoutController::class, 'baixarGratis'])
+        ->middleware(['signed', 'throttle:30,1'])
+        ->name('video.baixar-livre');
 
     // Autenticação passwordless do comprador
     Route::get('/acessar', [Publico\AcessoController::class, 'form'])->name('acesso');
@@ -90,6 +94,9 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
     Route::post('eventos/{evento}/logo', [Painel\EventosController::class, 'uploadLogo'])->name('eventos.logo.upload');
     Route::delete('eventos/{evento}/logo', [Painel\EventosController::class, 'deleteLogo'])->name('eventos.logo.delete');
     Route::get('eventos/{evento}/logo', [Painel\EventosController::class, 'serveLogo'])->name('eventos.logo.serve');
+    Route::post('eventos/{evento}/watermark', [Painel\EventosController::class, 'uploadWatermark'])->name('eventos.watermark.upload');
+    Route::delete('eventos/{evento}/watermark', [Painel\EventosController::class, 'deleteWatermark'])->name('eventos.watermark.delete');
+    Route::get('eventos/{evento}/watermark', [Painel\EventosController::class, 'serveWatermark'])->name('eventos.watermark.serve');
     Route::post('eventos/{evento}/capa', [Painel\EventosController::class, 'uploadCapa'])->name('eventos.capa.upload');
     Route::delete('eventos/{evento}/capa', [Painel\EventosController::class, 'deleteCapa'])->name('eventos.capa.delete');
 
@@ -154,6 +161,14 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
 
     // Relatório — só cliente (admin tem o dashboard)
     Route::middleware('role:cliente')->group(function () {
+        // Cupons — CRUD com escopo automático por user_id no controller
+        Route::get('cupons', [Painel\CuponsController::class, 'index'])->name('cupons.index');
+        Route::get('cupons/data', [Painel\CuponsController::class, 'data'])->name('cupons.data');
+        Route::post('cupons', [Painel\CuponsController::class, 'store'])->name('cupons.store');
+        Route::get('cupons/{cupom}', [Painel\CuponsController::class, 'show'])->name('cupons.show');
+        Route::put('cupons/{cupom}', [Painel\CuponsController::class, 'update'])->name('cupons.update');
+        Route::delete('cupons/{cupom}', [Painel\CuponsController::class, 'destroy'])->name('cupons.destroy');
+
         Route::get('relatorio', [Painel\RelatorioController::class, 'index'])->name('relatorio.index');
         Route::get('relatorio/vendas-por-mes', [Painel\RelatorioController::class, 'vendasPorMes'])->name('relatorio.vendas.mes');
         Route::get('relatorio/top-albuns', [Painel\RelatorioController::class, 'topAlbuns'])->name('relatorio.top.albuns');

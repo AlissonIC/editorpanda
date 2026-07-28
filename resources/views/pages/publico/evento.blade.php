@@ -3,33 +3,7 @@
 @section('titulo', $evento->nome . ' — ' . config('app.name'))
 
 @section('conteudo')
-{{-- Hero com capa como background (se houver) --}}
-<section class="pv-hero {{ $evento->capa_url ? 'pv-hero-capa' : '' }}"
-         @if($evento->capa_url) style="background-image: linear-gradient(rgba(0,0,0,.45), rgba(0,0,0,.6)), url('{{ $evento->capa_url }}');" @endif>
-    <div class="container py-5">
-        <div class="d-flex align-items-center flex-wrap gap-4">
-            @if($evento->logo_url)
-                <img src="{{ $evento->logo_url }}" alt="Logo" class="pv-hero-logo">
-            @endif
-            <div class="flex-grow-1">
-                <div class="text-uppercase small mb-1 {{ $evento->capa_url ? 'text-white-50' : 'text-muted' }}">Evento</div>
-                <h1 class="fw-bold mb-1 {{ $evento->capa_url ? 'text-white' : '' }}">{{ $evento->nome }}</h1>
-                <div class="{{ $evento->capa_url ? 'text-white-50' : 'text-muted' }}">
-                    @if($evento->localizacao_cidade || $evento->localizacao_estado)
-                        <i class="bi bi-geo-alt me-1"></i>{{ trim($evento->localizacao_cidade . ' / ' . $evento->localizacao_estado, ' /') }}
-                    @endif
-                    @if($evento->data)
-                        <span class="mx-2">·</span>
-                        <i class="bi bi-calendar me-1"></i>{{ $evento->data->format('d/m/Y') }}
-                    @endif
-                </div>
-            </div>
-            <a href="{{ route('publico.acesso') }}" class="btn {{ $evento->capa_url ? 'btn-light' : 'btn-dark' }} rounded-pill px-3">
-                <i class="bi bi-bag-check me-1"></i> Já comprei
-            </a>
-        </div>
-    </div>
-</section>
+@include('partials.publico.hero-evento', ['evento' => $evento])
 
 {{-- Descrição do evento --}}
 @if($evento->descricao)
@@ -55,11 +29,12 @@
                     $preco = $album->preco_por_video ?? $precoEvento;
                     $gratis = $preco <= 0;
                 @endphp
+                @php $capaAlbum = $album->fotoPrincipalUrl(); @endphp
                 <div class="col-6 col-md-4 col-lg-3">
                     <a href="{{ route('publico.album.show', $album->slug) }}" class="pv-album-card text-decoration-none">
                         <div class="pv-album-cover">
-                            @if($album->capa_path)
-                                <img src="{{ asset('storage/' . $album->capa_path) }}" alt="">
+                            @if($capaAlbum)
+                                <img src="{{ $capaAlbum }}" alt="" loading="lazy">
                             @else
                                 <i class="bi bi-collection"></i>
                             @endif

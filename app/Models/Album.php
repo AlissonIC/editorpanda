@@ -22,6 +22,7 @@ class Album extends Model
         // dados legados, mas ninguém deveria mais escrever nela.
         'preco',
         'preco_por_video',
+        'descontos_quantidade',
         'status',
         'rotacao_padrao',
         'espelhado_padrao',
@@ -32,6 +33,7 @@ class Album extends Model
         return [
             'preco' => 'decimal:2',
             'preco_por_video' => 'decimal:2',
+            'descontos_quantidade' => 'array',
             'rotacao_padrao' => 'integer',
             'espelhado_padrao' => 'boolean',
         ];
@@ -53,6 +55,36 @@ class Album extends Model
         return $this->precoEfetivoPorVideo() <= 0;
     }
 
+    /**
+     * Escada de desconto por quantidade efetiva: do álbum se definida, senão do evento.
+     * Formato: array de ['qtd' => int, 'percentual' => float].
+     */
+    public function descontosQuantidadeEfetivos(): array
+    {
+        if (! empty($this->descontos_quantidade)) return $this->descontos_quantidade;
+        return $this->evento?->descontos_quantidade ?? [];
+    }
+
+    /**
+     * Retorna o percentual de desconto aplicável para $qtd itens.
+     * Regra: maior degrau cuja `qtd` seja <= $qtd. Retorna 0 se nenhum bate.
+     */
+    public function percentualDescontoQuantidade(int $qtd): float
+    {
+        $degraus = collect($this->descontosQuantidadeEfetivos())
+            ->filter(fn ($d) => ($d['qtd'] ?? 0) > 0 && ($d['percentual'] ?? 0) > 0)
+            ->sortBy('qtd')
+            ->values();
+
+        $melhor = 0.0;
+        foreach ($degraus as $d) {
+            if ($qtd >= (int) $d['qtd']) {
+                $melhor = (float) $d['percentual'];
+            }
+        }
+        return $melhor;
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -66,6 +98,27 @@ class Album extends Model
     public function videos(): HasMany
     {
         return $this->hasMany(Video::class);
+    }
+
+    /**
+     * Foto principal do álbum: usa a primeira thumbnail de vídeo concluído
+     * do PRÓPRIO álbum; se não tiver, cai na foto principal do evento.
+     */
+    public function fotoPrincipalUrl(): ?string
+    {
+        $video = $this->videos()
+            ->whereNotNull('thumbnail_path')
+            ->where('status', 'concluido')
+            ->orderBy('id')
+            ->first();
+
+        if ($video) {
+            try {
+                return route('publico.video.thumb', $video);
+            } catch (\Throwable) { /* cai no fallback */ }
+        }
+
+        return $this->evento?->fotoPrincipalUrl();
     }
 
     public function pedidos(): HasMany

@@ -3,28 +3,29 @@
 @section('titulo', $album->nome . ' — ' . $album->evento->nome)
 
 @section('conteudo')
-<section class="pv-hero">
-    <div class="container py-4">
-        <div class="mb-2 small">
-            <a href="{{ route('publico.evento.show', $album->evento->slug) }}" class="text-muted text-decoration-none">
-                <i class="bi bi-arrow-left me-1"></i> {{ $album->evento->nome }}
-            </a>
-        </div>
-        <h1 class="fw-bold mb-1">{{ $album->nome }}</h1>
-        @if($album->subtitulo)
-            <p class="text-muted mb-0">{{ $album->subtitulo }}</p>
-        @endif
-    </div>
+{{-- Hero padronizado do evento (mesmo componente da página do evento) --}}
+@include('partials.publico.hero-evento', [
+    'evento' => $album->evento,
+    'subtituloExtra' => 'Álbum: ' . $album->nome . ($album->subtitulo ? ' — ' . $album->subtitulo : ''),
+])
+
+{{-- Voltar pro evento --}}
+<section class="container pt-3">
+    <a href="{{ route('publico.evento.show', $album->evento->slug) }}" class="text-muted text-decoration-none small">
+        <i class="bi bi-arrow-left me-1"></i> Voltar para {{ $album->evento->nome }}
+    </a>
 </section>
 
 @php $gratis = $preco <= 0; @endphp
 <section class="container py-4">
+    @php $descontos = $album->descontosQuantidadeEfetivos(); @endphp
     <div
         id="album-app"
         class="row g-4"
         data-checkout-url="{{ route('publico.checkout.store', $album->slug) }}"
         data-preco="{{ $preco }}"
         data-gratis="{{ $gratis ? '1' : '0' }}"
+        data-descontos="{{ json_encode($descontos) }}"
     >
         <div class="col-lg-8">
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -157,6 +158,14 @@
                             <span>Preço unitário</span>
                             <span>R$ {{ number_format($preco, 2, ',', '.') }}</span>
                         </div>
+                        <div class="d-flex justify-content-between text-muted small mt-1">
+                            <span>Subtotal</span>
+                            <span>R$ <span id="pv-subtotal">0,00</span></span>
+                        </div>
+                        <div class="d-flex justify-content-between small mt-1 pv-desconto-row d-none" id="pv-desconto-row">
+                            <span class="text-success"><i class="bi bi-tag-fill me-1"></i><span id="pv-desconto-label">Desconto</span></span>
+                            <span class="text-success">− R$ <span id="pv-desconto">0,00</span></span>
+                        </div>
                     @endif
                     <hr>
                     <div class="d-flex justify-content-between fs-5 fw-bold">
@@ -167,6 +176,20 @@
                             <span>R$ <span id="pv-total">0,00</span></span>
                         @endif
                     </div>
+
+                    @if(! $gratis && ! empty($descontos))
+                        <div class="mt-3 small">
+                            <div class="text-muted mb-1"><i class="bi bi-tag me-1"></i>Descontos por quantidade:</div>
+                            <ul class="list-unstyled mb-0 ps-1">
+                                @foreach($descontos as $d)
+                                    <li class="small">
+                                        <span class="text-dark">{{ (int) $d['qtd'] }}+ vídeos</span>
+                                        <span class="text-success fw-semibold ms-1">−{{ number_format((float) $d['percentual'], 0) }}%</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
                 </div>
 
                 <form id="pv-checkout-form" novalidate>
@@ -186,6 +209,14 @@
                         <label class="form-label small">WhatsApp (opcional)</label>
                         <input type="text" name="whatsapp" class="form-control" placeholder="(11) 99999-9999">
                     </div>
+                    @if(! $gratis)
+                        <div class="mb-3">
+                            <label class="form-label small">Cupom de desconto (opcional)</label>
+                            <input type="text" name="codigo_cupom" class="form-control text-uppercase"
+                                   placeholder="Digite o código" maxlength="60">
+                            <small class="text-muted">Aplicado na finalização se válido.</small>
+                        </div>
+                    @endif
                     <button type="submit" class="btn btn-dark w-100 py-2 fw-semibold" id="pv-checkout-btn" disabled>
                         {{ $gratis ? 'Baixar grátis' : 'Finalizar compra' }}
                     </button>

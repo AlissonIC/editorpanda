@@ -71,6 +71,21 @@
                           placeholder="Conte sobre o evento, local, fotógrafo…">{{ $evento->descricao }}</textarea>
             </div>
 
+            {{-- Desconto por quantidade --}}
+            <div class="panda-card mb-4">
+                <h5 class="fw-bold mb-1">Desconto por quantidade</h5>
+                <p class="text-muted small mb-3">
+                    Aplicado automaticamente no checkout quando o cliente compra vários vídeos.
+                    Álbuns podem sobrescrever essa escada individualmente.
+                </p>
+                <div id="ev-descontos-editor">
+                    @include('partials.painel.descontos-quantidade-editor', [
+                        'descontos' => $evento->descontos_quantidade ?? [],
+                        'namePrefix' => 'descontos_quantidade',
+                    ])
+                </div>
+            </div>
+
             {{-- Processamento --}}
             <div class="panda-card mb-4">
                 <h5 class="fw-bold mb-1">Processamento</h5>
@@ -84,23 +99,24 @@
                     <div class="col-md-7">
                         <div class="ev-controls-box">
                             <div class="ev-controls-section">
-                                <div class="ev-controls-section-label">Logo</div>
+                                <div class="ev-controls-section-label">Marca d'água</div>
                                 <div class="d-flex align-items-center gap-3">
-                                    <div class="ev-logo-preview {{ $evento->logo_url ? 'has-logo' : '' }}" id="ev-logo-preview"
-                                         style="{{ $evento->logo_url ? 'background-image:url('.$evento->logo_url.')' : '' }}">
-                                        @unless($evento->logo_url)<i class="bi bi-image"></i>@endunless
+                                    <div class="ev-logo-preview {{ $evento->watermark_url ? 'has-logo' : '' }}" id="ev-logo-preview"
+                                         style="{{ $evento->watermark_url ? 'background-image:url('.$evento->watermark_url.')' : '' }}">
+                                        @unless($evento->watermark_url)<i class="bi bi-image"></i>@endunless
                                     </div>
                                     <div class="flex-grow-1 min-w-0">
-                                        <p class="text-muted small mb-2 lh-sm">PNG com transparência, até 2&nbsp;MB.</p>
+                                        <p class="text-muted small mb-2 lh-sm">PNG com transparência, até 2&nbsp;MB. É a imagem queimada em cada vídeo processado.</p>
                                         <div class="d-flex gap-2">
                                             <label class="btn btn-sm btn-dark-panda">
                                                 <i class="bi bi-upload me-1"></i>Escolher
                                                 <input type="file" id="ev-logo-input" class="d-none"
                                                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                                                       data-url="{{ route('painel.eventos.logo.upload', $evento) }}"
-                                                       data-delete-url="{{ route('painel.eventos.logo.delete', $evento) }}">
+                                                       data-url="{{ route('painel.eventos.watermark.upload', $evento) }}"
+                                                       data-delete-url="{{ route('painel.eventos.watermark.delete', $evento) }}"
+                                                       data-field="watermark">
                                             </label>
-                                            <button type="button" class="btn btn-sm btn-outline-danger {{ $evento->logo_url ? '' : 'd-none' }}" id="ev-logo-remove">
+                                            <button type="button" class="btn btn-sm btn-outline-danger {{ $evento->watermark_url ? '' : 'd-none' }}" id="ev-logo-remove">
                                                 <i class="bi bi-x-lg"></i>
                                             </button>
                                         </div>
@@ -110,24 +126,24 @@
 
                             <div class="ev-controls-section">
                                 <div class="ev-controls-section-label">Posição</div>
-                                <div class="pos-grid" data-field-target="logo_posicao">
-                                    @foreach(App\Models\Evento::POSICOES_LOGO as $pos)
+                                <div class="pos-grid" data-field-target="watermark_posicao">
+                                    @foreach(App\Models\Evento::POSICOES_WATERMARK as $pos)
                                         <button type="button"
-                                                class="pos-cell {{ ($evento->logo_posicao ?? 'top-right') === $pos ? 'is-active' : '' }}"
+                                                class="pos-cell {{ ($evento->watermark_posicao ?? 'top-right') === $pos ? 'is-active' : '' }}"
                                                 data-value="{{ $pos }}"
                                                 title="{{ str_replace('-', ' ', $pos) }}"></button>
                                     @endforeach
                                 </div>
-                                <input type="hidden" name="logo_posicao" value="{{ $evento->logo_posicao ?? 'top-right' }}">
+                                <input type="hidden" name="watermark_posicao" value="{{ $evento->watermark_posicao ?? 'top-right' }}">
                             </div>
 
                             <div class="ev-controls-section">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div class="ev-controls-section-label mb-0">Escala</div>
-                                    <span class="badge bg-light text-dark border"><span id="ev-scale-val">{{ (int) round(($evento->logo_escala ?? 0.15) * 100) }}</span>%</span>
+                                    <span class="badge bg-light text-dark border"><span id="ev-scale-val">{{ (int) round(($evento->watermark_escala ?? 0.15) * 100) }}</span>%</span>
                                 </div>
-                                <input type="range" name="logo_escala" min="0.05" max="0.5" step="0.01"
-                                       value="{{ $evento->logo_escala ?? 0.15 }}" class="form-range mt-2 mb-0" id="ev-scale-range">
+                                <input type="range" name="watermark_escala" min="0.05" max="0.5" step="0.01"
+                                       value="{{ $evento->watermark_escala ?? 0.15 }}" class="form-range mt-2 mb-0" id="ev-scale-range">
                             </div>
 
                             <div class="ev-controls-section ev-controls-section--toggles">
@@ -155,12 +171,12 @@
                             <div class="reels-screen" style="background-image: url('{{ asset('img/reels-preview.jpg') }}');">
                                 <div class="reels-gradient {{ $evento->gradiente_habilitado ? '' : 'd-none' }}"
                                      id="reels-gradient"
-                                     data-position="{{ $evento->logo_posicao ?? 'top-right' }}"></div>
+                                     data-position="{{ $evento->watermark_posicao ?? 'top-right' }}"></div>
 
-                                <div class="reels-logo {{ $evento->logo_url ? '' : 'd-none' }}"
+                                <div class="reels-logo {{ $evento->watermark_url ? '' : 'd-none' }}"
                                      id="reels-logo"
-                                     data-position="{{ $evento->logo_posicao ?? 'top-right' }}"
-                                     style="width: {{ (($evento->logo_escala ?? 0.15) * 100) }}%; @if($evento->logo_url) background-image: url('{{ $evento->logo_url }}?v={{ time() }}'); @endif">
+                                     data-position="{{ $evento->watermark_posicao ?? 'top-right' }}"
+                                     style="width: {{ (($evento->watermark_escala ?? 0.15) * 100) }}%; @if($evento->watermark_url) background-image: url('{{ $evento->watermark_url }}?v={{ time() }}'); @endif">
                                 </div>
 
                                 {{-- UI decorativa do Reels --}}
@@ -211,6 +227,30 @@
                     </button>
                 </div>
                 <small class="text-muted d-block mt-2">JPG, PNG ou WEBP · até 4&nbsp;MB</small>
+            </div>
+
+            {{-- Logo do evento (branding público — diferente da marca d'água do processamento) --}}
+            <div class="panda-card mb-4">
+                <h5 class="fw-bold mb-1">Logo do evento</h5>
+                <p class="text-muted small mb-3">Logo mostrada na página pública. Não é a marca d'água dos vídeos.</p>
+
+                <div class="ev-capa-preview mb-3 {{ $evento->logo_url ? 'has-capa' : '' }}" id="ev-brand-logo-preview"
+                     style="{{ $evento->logo_url ? 'background-image:url('.$evento->logo_url.')' : '' }}"
+                     data-url="{{ route('painel.eventos.logo.upload', $evento) }}"
+                     data-delete-url="{{ route('painel.eventos.logo.delete', $evento) }}">
+                    @unless($evento->logo_url)<i class="bi bi-image"></i>@endunless
+                </div>
+
+                <div class="d-flex gap-2">
+                    <label class="btn btn-sm btn-dark-panda flex-grow-1">
+                        <i class="bi bi-upload me-1"></i>{{ $evento->logo_url ? 'Trocar' : 'Escolher imagem' }}
+                        <input type="file" id="ev-brand-logo-input" class="d-none" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+                    </label>
+                    <button type="button" class="btn btn-sm btn-outline-danger {{ $evento->logo_url ? '' : 'd-none' }}" id="ev-brand-logo-remove">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+                <small class="text-muted d-block mt-2">PNG, JPG, WEBP ou SVG · até 2&nbsp;MB</small>
             </div>
 
             {{-- Barra de ação --}}

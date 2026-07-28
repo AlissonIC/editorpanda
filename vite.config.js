@@ -25,6 +25,7 @@ export default defineConfig({
                 'resources/js/pages/painel/planos.js',
                 'resources/js/pages/painel/relatorio.js',
                 'resources/js/pages/painel/assinatura.js',
+                'resources/js/pages/painel/cupons.js',
                 'resources/js/pages/painel/perfil.js',
             ],
             refresh: true,
