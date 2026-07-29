@@ -119,25 +119,17 @@ fi
 step "php artisan queue:restart (sinal de shutdown gracioso)"
 php artisan queue:restart
 
-if [[ $PROD -eq 1 ]] && command -v systemctl >/dev/null 2>&1; then
-    # Instâncias do template pandavideo-worker@N.service.
-    # --all inclui inactive/failed pra pegar workers que crasharam entre deploys.
-    workers=$(systemctl list-units --all --no-legend --plain 'pandavideo-worker@*.service' 2>/dev/null \
-              | awk '/^pandavideo-worker@[0-9]+\.service/ {print $1}')
-
-    if [[ -n "$workers" ]]; then
-        step "Reiniciando workers systemd (força pickup de código novo)"
-        for w in $workers; do
-            echo "  - $w"
-            sudo systemctl restart "$w" || warn "Falha ao reiniciar $w (rode: systemctl status $w)"
-        done
+if [[ $PROD -eq 1 ]] && command -v supervisorctl >/dev/null 2>&1; then
+    # Workers rodam sob supervisor (config em /etc/supervisor/conf.d/pandavideo-worker.conf).
+    # Restart força pickup do código novo — queue:restart acima só sinaliza,
+    # e workers em FATAL (ex: MySQL down no deploy anterior) ficam presos.
+    if sudo supervisorctl status pandavideo-worker:* >/dev/null 2>&1; then
+        step "Reiniciando workers do supervisor (força pickup de código novo)"
+        sudo supervisorctl restart 'pandavideo-worker:*' || warn "Falha ao reiniciar workers (rode: supervisorctl status pandavideo-worker:*)"
     else
-        warn "Nenhum pandavideo-worker@N.service encontrado no systemd."
-        warn "Se este é o primeiro deploy, cria o serviço e sobe com:"
-        warn "  sudo systemctl daemon-reload"
-        warn "  sudo systemctl enable --now pandavideo-worker@1"
-        warn "  sudo systemctl enable --now pandavideo-worker@2"
-        warn "(config em docs/processamento-de-videos.md)"
+        warn "Grupo pandavideo-worker não encontrado no supervisor."
+        warn "Config esperada em /etc/supervisor/conf.d/pandavideo-worker.conf"
+        warn "(exemplo em docs/processamento-de-videos.md)."
     fi
 fi
 

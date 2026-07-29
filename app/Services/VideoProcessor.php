@@ -33,6 +33,12 @@ class VideoProcessor
     private const OUT_AUDIO_BITRATE = '128k';
     private const TIMEOUT_SECONDS = 1800; // 30 min
 
+    // Threads por encode do FFmpeg. Limitar é essencial pra throughput em
+    // servidor multi-worker: libx264 sem -threads usa todos os cores, então
+    // 4 workers competiriam por 12 cores e context switch destruiria o ganho.
+    // 3 threads × 4 workers = 12 cores dedicados, 4 vídeos em paralelo.
+    private const OUT_THREADS = 3;
+
     // Imagem enviada no lugar de vídeo é convertida num MP4 estático desta duração
     private const IMAGE_DURATION_SEC = 5;
 
@@ -339,6 +345,7 @@ class VideoProcessor
             '-c:v', 'libx264',
             '-preset', self::OUT_PRESET,
             '-crf', (string) self::OUT_CRF,
+            '-threads', (string) self::OUT_THREADS,
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
             ...(! $isImagem ? [
@@ -428,6 +435,7 @@ class VideoProcessor
             '-c:v', 'libx264',
             '-preset', 'veryfast',
             '-crf', '28',
+            '-threads', '2',
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
             '-c:a', 'aac',
