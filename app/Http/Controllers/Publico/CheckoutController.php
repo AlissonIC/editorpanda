@@ -20,6 +20,44 @@ use Illuminate\Support\Facades\URL;
 
 class CheckoutController extends Controller
 {
+    /**
+     * Pré-checagem chamada quando o comprador informa o e-mail no form.
+     * Devolve quais dos vídeos selecionados JÁ foram comprados por esse email
+     * antes — permite mostrar overlay elegante em vez de deixar o comprador
+     * clicar em "Finalizar compra" pra descobrir tarde demais.
+     */
+    public function verificarEmail(Request $request, Album $album): JsonResponse
+    {
+        abort_unless($album->status === 'publicado' && $album->evento?->status === 'ativo', 404);
+
+        $data = $request->validate([
+            'email' => ['required', 'email', 'max:180'],
+            'video_ids' => ['required', 'array', 'min:1', 'max:200'],
+            'video_ids.*' => ['integer'],
+        ]);
+
+        $email = strtolower(trim($data['email']));
+        $videoIds = array_values(array_unique(array_filter($data['video_ids'])));
+
+        $comprador = Comprador::where('email', $email)->first();
+        if (! $comprador) {
+            return response()->json(['ja_comprados' => []]);
+        }
+
+        $jaPagos = DB::table('pedido_itens')
+            ->join('pedidos', 'pedidos.id', '=', 'pedido_itens.pedido_id')
+            ->where('pedidos.comprador_id', $comprador->id)
+            ->where('pedidos.status', 'pago')
+            ->whereIn('pedido_itens.video_id', $videoIds)
+            ->pluck('pedido_itens.video_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        return response()->json(['ja_comprados' => $jaPagos]);
+    }
+
     public function store(Request $request, Album $album): JsonResponse
     {
         abort_unless($album->status === 'publicado' && $album->evento?->status === 'ativo', 404);

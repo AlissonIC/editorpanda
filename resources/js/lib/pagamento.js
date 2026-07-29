@@ -226,7 +226,7 @@ async function montarBrickCartao() {
 // -----------------------------------------------------
 // API pública
 // -----------------------------------------------------
-export async function iniciar({ pedidoId, publicKey, total }) {
+export async function iniciar({ pedidoId, publicKey, total, metodoInicial = 'pix' }) {
     const modalEl = document.getElementById('modal-pagamento');
     if (!modalEl) throw new Error('Modal de pagamento não encontrado no DOM.');
 
@@ -242,8 +242,15 @@ export async function iniciar({ pedidoId, publicKey, total }) {
 
     modalInstance = modalInstance || new bootstrap.Modal(modalEl);
     modalInstance.show();
-    trocarAba('pix');
-    carregarPix(currentPedidoId);
+
+    // Método inicial vem da radio do form. PIX por default (fluxo mais barato/rápido).
+    const abaInicial = ['pix', 'cartao'].includes(metodoInicial) ? metodoInicial : 'pix';
+    trocarAba(abaInicial);
+    if (abaInicial === 'cartao') {
+        await montarBrickCartao();
+    } else {
+        carregarPix(currentPedidoId);
+    }
 
     // Wire das abas (só uma vez — flag no dataset evita re-attach em re-abertura
     // do modal). Handlers usam currentPedidoId/currentTotal do escopo do módulo,

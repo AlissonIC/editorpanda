@@ -429,6 +429,105 @@ document.addEventListener('DOMContentLoaded', () => {
         el?.addEventListener('input', () => el.classList.remove('is-invalid'));
     });
 
+    // ==================== Pré-checagem de e-mail ====================
+    // Quando o comprador digita um e-mail válido E há itens selecionados,
+    // checa no backend quais já foram comprados por esse e-mail antes.
+    // Mostra overlay elegante com 2 ações: receber por e-mail | remover do carrinho.
+    const verificarUrl = form.dataset.verificarUrl;
+    const preCheckBox = document.getElementById('pv-pre-check');
+    const preCheckTitle = document.getElementById('pv-pre-check-title');
+    const preCheckMsg = document.getElementById('pv-pre-check-msg');
+    const preCheckMailBtn = document.getElementById('pv-pre-check-mail');
+    const preCheckRemoveBtn = document.getElementById('pv-pre-check-remove');
+    const emailInput = form.querySelector('[name=email]');
+
+    // Cache pra não re-verificar o mesmo (email, video_ids) várias vezes
+    let ultimaVerificacao = { chave: null, jaComprados: [] };
+
+    function esconderPreCheck() {
+        preCheckBox?.classList.add('d-none');
+        ultimaVerificacao = { chave: null, jaComprados: [] };
+    }
+
+    async function verificarPreCompra() {
+        if (!verificarUrl || !preCheckBox) return; // álbum grátis (não tem verificação)
+        const email = emailInput?.value.trim().toLowerCase();
+        const ids = [...selectedIds];
+        if (!email || !emailInput.checkValidity() || ids.length === 0) {
+            esconderPreCheck();
+            return;
+        }
+        const chave = `${email}|${ids.sort((a, b) => a - b).join(',')}`;
+        if (chave === ultimaVerificacao.chave) return; // já verificado
+
+        try {
+            const { data } = await axios.post(verificarUrl, { email, video_ids: ids });
+            const jaComprados = data.ja_comprados || [];
+            ultimaVerificacao = { chave, jaComprados };
+
+            if (jaComprados.length === 0) {
+                esconderPreCheck();
+                return;
+            }
+            const total = ids.length;
+            const qtd = jaComprados.length;
+            preCheckTitle.textContent = qtd === total
+                ? `Todos os ${total} itens já foram comprados por este e-mail.`
+                : `${qtd} de ${total} itens já foram comprados por este e-mail.`;
+            preCheckMsg.textContent = `Podemos enviar os links de download para ${email}. Ou remova os itens já comprados do carrinho para pagar só o restante.`;
+            // Se tudo comprado, "remover" resultaria em carrinho vazio — esconde a opção.
+            preCheckRemoveBtn.classList.toggle('d-none', qtd === total);
+            preCheckBox.classList.remove('d-none');
+        } catch (err) {
+            // Erro silencioso — não bloqueia o fluxo, comprador ainda pode tentar checkout
+            console.warn('[pre-check] falha:', err?.message);
+        }
+    }
+
+    emailInput?.addEventListener('blur', verificarPreCompra);
+    // Reverifica quando seleção do grid muda (usuário adicionou/removeu itens)
+    root.addEventListener('change', (e) => {
+        if (e.target.matches('.pv-video-check') && preCheckBox && !preCheckBox.classList.contains('d-none')) {
+            // Debounce implícito: só verifica quando pára de mexer (sem timeout)
+            verificarPreCompra();
+        }
+    });
+
+    // Botão "Receber por e-mail": reutiliza o fluxo de acesso passwordless.
+    // POST /acessar já gera magic link e envia — mesma rota do "Já comprei".
+    preCheckMailBtn?.addEventListener('click', async () => {
+        const email = emailInput.value.trim();
+        if (!email) return;
+        preCheckMailBtn.disabled = true;
+        const orig = preCheckMailBtn.innerHTML;
+        preCheckMailBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando…';
+        try {
+            await axios.post('/acessar', { email });
+            window.showToast?.(`Enviamos um link de acesso para ${email}.`, 'success');
+            esconderPreCheck();
+        } catch (err) {
+            const msg = err.response?.data?.message || 'Falha ao enviar. Tente novamente em instantes.';
+            window.showToast?.(msg, 'error');
+        } finally {
+            preCheckMailBtn.disabled = false;
+            preCheckMailBtn.innerHTML = orig;
+        }
+    });
+
+    // Botão "Remover do carrinho": desmarca os checkboxes dos vídeos já comprados.
+    preCheckRemoveBtn?.addEventListener('click', () => {
+        const { jaComprados } = ultimaVerificacao;
+        if (!jaComprados.length) return;
+        jaComprados.forEach((id) => {
+            selectedIds.delete(Number(id));
+            const cb = root.querySelector(`.pv-video-check[value="${id}"]`);
+            if (cb) cb.checked = false;
+        });
+        refresh();
+        esconderPreCheck();
+        window.showToast?.(`${jaComprados.length} item(s) removido(s) do carrinho.`, 'info');
+    });
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         // Validação nativa antes de disparar o request — evita ida-e-volta ao servidor.
@@ -461,10 +560,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // Fluxo pago: abre modal de pagamento (MP Bricks + PIX). O redirect
             // pra /pedido/{id} acontece SÓ após o MP aprovar (via polling).
+            const metodoInicial = form.querySelector('input[name="metodo"]:checked')?.value || 'pix';
             await iniciarPagamento({
                 pedidoId: data.pedido_id,
                 publicKey: data.public_key,
                 total: data.total,
+                metodoInicial,
             });
             btn.textContent = original; // permite retry se o modal for fechado
             btn.disabled = false;

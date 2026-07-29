@@ -206,8 +206,10 @@
                     @endif
                 </div>
 
-                <form id="pv-checkout-form" novalidate autocomplete="on">
+                <form id="pv-checkout-form" novalidate autocomplete="on"
+                      @unless($gratis) data-verificar-url="{{ route('publico.checkout.verificar-email', $album->slug) }}" @endunless>
                     @csrf
+
                     <div class="mb-2">
                         <label class="form-label small" for="pv-form-nome">Seu nome</label>
                         <input type="text" name="nome" id="pv-form-nome"
@@ -218,6 +220,7 @@
                                required minlength="2" maxlength="120">
                         <div class="invalid-feedback">Informe seu nome.</div>
                     </div>
+
                     <div class="mb-2">
                         <label class="form-label small" for="pv-form-email">E-mail</label>
                         <input type="email" name="email" id="pv-form-email"
@@ -228,10 +231,23 @@
                                spellcheck="false"
                                required maxlength="180">
                         <div class="invalid-feedback">Informe um e-mail válido.</div>
-                        <small class="text-muted">
-                            {{ $gratis ? 'Enviaremos os vídeos para este e-mail.' : 'Os vídeos serão enviados para este e-mail.' }}
-                        </small>
                     </div>
+
+                    {{-- Overlay de pré-checagem: preenche via JS quando o email
+                         é válido e há itens já comprados por esse comprador. --}}
+                    <div id="pv-pre-check" class="alert alert-warning small mb-3 d-none" role="status">
+                        <div class="fw-semibold mb-1" id="pv-pre-check-title">—</div>
+                        <div class="text-muted mb-2" id="pv-pre-check-msg">—</div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-sm btn-dark" id="pv-pre-check-mail">
+                                <i class="bi bi-envelope me-1"></i>Receber por e-mail
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-dark" id="pv-pre-check-remove">
+                                <i class="bi bi-cart-x me-1"></i>Remover do carrinho
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label small" for="pv-form-whats">WhatsApp <span class="text-muted">(opcional)</span></label>
                         <input type="tel" name="whatsapp" id="pv-form-whats"
@@ -241,18 +257,49 @@
                                placeholder="(11) 99999-9999"
                                maxlength="20">
                     </div>
+
                     @if(! $gratis)
+                        {{-- Método de pagamento — pré-seleciona a aba do modal.
+                             Layout de tiles pra ficar tocável no mobile e claro visualmente. --}}
                         <div class="mb-3">
-                            <label class="form-label small" for="pv-form-cupom">Cupom de desconto <span class="text-muted">(opcional)</span></label>
-                            <input type="text" name="codigo_cupom" id="pv-form-cupom"
-                                   class="form-control text-uppercase"
-                                   autocapitalize="characters"
-                                   autocomplete="off"
-                                   spellcheck="false"
-                                   placeholder="Digite o código" maxlength="60">
-                            <small class="text-muted">Aplicado na finalização se válido.</small>
+                            <label class="form-label small">Forma de pagamento</label>
+                            <div class="pv-metodo-tiles">
+                                <label class="pv-metodo-tile">
+                                    <input type="radio" name="metodo" value="pix" checked>
+                                    <span class="pv-metodo-tile-body">
+                                        <i class="bi bi-qr-code"></i>
+                                        <span class="fw-semibold small">PIX</span>
+                                        <span class="text-muted" style="font-size:.7rem;">Aprovação em segundos</span>
+                                    </span>
+                                </label>
+                                <label class="pv-metodo-tile">
+                                    <input type="radio" name="metodo" value="cartao">
+                                    <span class="pv-metodo-tile-body">
+                                        <i class="bi bi-credit-card"></i>
+                                        <span class="fw-semibold small">Cartão</span>
+                                        <span class="text-muted" style="font-size:.7rem;">Até 12x</span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {{-- Cupom colapsável — reduz ruído visual pra maioria que não usa. --}}
+                        <div class="mb-3">
+                            <a class="small text-muted text-decoration-none" data-bs-toggle="collapse"
+                               href="#pv-cupom-collapse" role="button">
+                                <i class="bi bi-tag me-1"></i>Tem cupom de desconto?
+                            </a>
+                            <div class="collapse mt-2" id="pv-cupom-collapse">
+                                <input type="text" name="codigo_cupom" id="pv-form-cupom"
+                                       class="form-control text-uppercase"
+                                       autocapitalize="characters"
+                                       autocomplete="off"
+                                       spellcheck="false"
+                                       placeholder="Digite o código" maxlength="60">
+                            </div>
                         </div>
                     @endif
+
                     <button type="submit" class="btn btn-dark w-100 py-2 fw-semibold" id="pv-checkout-btn" disabled>
                         {{ $gratis ? 'Baixar grátis' : 'Finalizar compra' }}
                     </button>

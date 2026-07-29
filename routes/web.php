@@ -35,6 +35,11 @@ Route::name('publico.')->group(function () {
     Route::post('/a/{album:slug}/checkout', [Publico\CheckoutController::class, 'store'])
         ->middleware('throttle:10,1')
         ->name('checkout.store');
+    // Pré-checagem on-blur do e-mail — antes do submit, avisa quais itens
+    // já foram comprados por esse comprador.
+    Route::post('/a/{album:slug}/checkout/verificar-email', [Publico\CheckoutController::class, 'verificarEmail'])
+        ->middleware('throttle:30,1')
+        ->name('checkout.verificar-email');
     Route::get('/pedido/{pedido}', [Publico\CheckoutController::class, 'confirmacao'])->name('checkout.confirmacao');
     // Download por item do pedido — URL assinada (2h), não exige login. Usada
     // no /pedido/{id} pra que o comprador baixe direto após checkout, sem
