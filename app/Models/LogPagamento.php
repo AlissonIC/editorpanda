@@ -67,12 +67,13 @@ class LogPagamento extends Model
     private static function registrar(string $nivel, ?Pedido $pedido, string $evento, string $mensagem, ?array $payload, ?array $response): void
     {
         try {
+            $gatewayStatus = is_array($response) ? ($response['status'] ?? null) : null;
             self::create([
                 'pedido_id' => $pedido?->id,
                 'nivel' => $nivel,
                 'evento' => mb_substr($evento, 0, 60),
                 'mensagem' => mb_substr($mensagem, 0, 500),
-                'gateway_status' => $response['status'] ?? null,
+                'gateway_status' => is_string($gatewayStatus) ? mb_substr($gatewayStatus, 0, 32) : null,
                 'payload' => self::sanitize($payload),
                 'response' => $response,
                 'created_at' => now(),

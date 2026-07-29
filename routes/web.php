@@ -57,6 +57,13 @@ Route::name('publico.')->group(function () {
         ->name('pagamento.status');
     Route::get('/pedido/{pedido}/pagamento/retorno', [Publico\PagamentoController::class, 'retorno'])
         ->name('pagamento.retorno');
+
+    // URL de notificação MP (por payment, não global). Sem CSRF (POST cross-origin
+    // do MP), sem auth. Body forjado é seguro: handler re-consulta MP pelo token.
+    // Throttle alto porque MP reenvia até dar 2xx (várias tentativas por payment).
+    Route::post('/pagamento/notificacao', [Publico\PagamentoController::class, 'notificacao'])
+        ->middleware('throttle:300,1')
+        ->name('pagamento.notificacao');
     // Download livre p/ eventos gratuitos — URL assinada enviada por email
     Route::get('/v/{video}/gratis', [Publico\CheckoutController::class, 'baixarGratis'])
         ->middleware(['signed', 'throttle:30,1'])

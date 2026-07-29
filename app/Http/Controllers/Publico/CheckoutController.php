@@ -24,6 +24,19 @@ class CheckoutController extends Controller
     {
         abort_unless($album->status === 'publicado' && $album->evento?->status === 'ativo', 404);
 
+        // Guard-rail: álbum pago EXIGE MP configurado. Sem isso o front recebe
+        // public_key=null e o modal do Bricks abre em branco silenciosamente.
+        // Falha rápido aqui com mensagem clara em vez de deixar o cliente perdido.
+        if (! $album->ehGratuito()) {
+            $accessToken = config('services.mercadopago.access_token');
+            $publicKey = config('services.mercadopago.public_key');
+            if (! $accessToken || ! $publicKey) {
+                abort(response()->json([
+                    'message' => 'Pagamentos temporariamente indisponíveis. Fale com o organizador do evento.',
+                ], 503));
+            }
+        }
+
         $data = $request->validate([
             'nome' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:180'],
@@ -126,7 +139,7 @@ class CheckoutController extends Controller
             // Grátis → 'pago' direto sem gateway (não há o que cobrar).
             // Pago  → 'aguardando_pagamento' — o front chama /pedido/{id}/pagamento/{pix|cartao}
             //        pra criar o payment no MP, e polla status até aprovar/rejeitar.
-            $statusInicial = $ehGratis ? Pedido::STATUS_PAGO : Pedido::STATUS_AGUARDANDO_PAGAMENTO;
+            $statusInicial = $ehGratis ? Pedido::STATUS_PAGO : Pedido::STATUS_PENDENTE;
             $pedido = Pedido::create([
                 'album_id' => $album->id,
                 'user_id' => $album->user_id,

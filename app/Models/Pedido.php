@@ -9,10 +9,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Pedido extends Model
 {
     // Fluxo do pedido pago:
-    //   AGUARDANDO_PAGAMENTO → PAGO (via polling do MP)
-    //                       → CANCELADO (usuário desistiu / expirou / MP rejeitou)
+    //   PENDENTE → PAGO (via polling do MP OU notificação /pagamento/notificacao)
+    //           → CANCELADO (usuário desistiu / expirou / MP rejeitou)
     // Grátis pula direto pra PAGO (não usa gateway).
-    public const STATUS_AGUARDANDO_PAGAMENTO = 'aguardando_pagamento';
+    // 'pendente' está no enum original da migration — reutilizado como
+    // "aguardando pagamento" pra evitar alterar schema.
+    public const STATUS_PENDENTE = 'pendente';
     public const STATUS_PAGO = 'pago';
     public const STATUS_CANCELADO = 'cancelado';
 

@@ -21,6 +21,14 @@ let pollTimer = null;
 let pixTimerInterval = null;
 let modalInstance = null;
 
+// Estado da sessão de pagamento em curso. Precisa ser module-level (não
+// closure de iniciar()) porque event listeners do modal são wirados UMA vez
+// pra evitar duplicação — se fossem closures, capturariam o pedido da PRIMEIRA
+// abertura e continuariam usando ele em aberturas subsequentes.
+let currentPedidoId = null;
+let currentPublicKey = null;
+let currentTotal = null;
+
 // -----------------------------------------------------
 // SDK loader (idempotente)
 // -----------------------------------------------------
@@ -151,9 +159,10 @@ async function carregarPix(pedidoId) {
 // -----------------------------------------------------
 // Cartão (MP Bricks)
 // -----------------------------------------------------
-async function montarBrickCartao(pedidoId, publicKey, total) {
+async function montarBrickCartao() {
     limparStatus();
-    // Limpa brick anterior se estiver trocando de aba múltiplas vezes
+    // Limpa brick anterior — importante porque pode-se trocar de aba múltiplas
+    // vezes OU abrir modal pra pedido diferente após cancelar o anterior.
     if (brickController) { try { brickController.unmount(); } catch {} brickController = null; }
 
     try {
@@ -163,13 +172,13 @@ async function montarBrickCartao(pedidoId, publicKey, total) {
         return;
     }
     if (!mpInstance) {
-        mpInstance = new window.MercadoPago(publicKey, { locale: 'pt-BR' });
+        mpInstance = new window.MercadoPago(currentPublicKey, { locale: 'pt-BR' });
     }
 
     const bricks = mpInstance.bricks();
     brickController = await bricks.create('cardPayment', 'cardPaymentBrick_container', {
         initialization: {
-            amount: total,
+            amount: currentTotal,
         },
         customization: {
             paymentMethods: {
@@ -190,7 +199,7 @@ async function montarBrickCartao(pedidoId, publicKey, total) {
                         issuer_id: cardData.formData.issuer_id,
                         identification: cardData.formData.payer?.identification?.number,
                     };
-                    const { data } = await axios.post(`/pedido/${pedidoId}/pagamento/cartao`, payload);
+                    const { data } = await axios.post(`/pedido/${currentPedidoId}/pagamento/cartao`, payload);
                     if (data.status === 'approved' && data.redirect) {
                         setStatus('Pagamento aprovado! Redirecionando…', 'success');
                         setTimeout(() => { window.location.href = data.redirect; }, 800);
@@ -199,7 +208,7 @@ async function montarBrickCartao(pedidoId, publicKey, total) {
                     } else {
                         // Aprovação assíncrona (3DS challenge, análise anti-fraude) → polling
                         setStatus('Confirmando pagamento — aguarde…', 'info');
-                        iniciarPolling(pedidoId);
+                        iniciarPolling(currentPedidoId);
                     }
                 } catch (err) {
                     setStatus(err?.response?.data?.message || 'Erro ao processar cartão.', 'danger');
@@ -221,15 +230,24 @@ export async function iniciar({ pedidoId, publicKey, total }) {
     const modalEl = document.getElementById('modal-pagamento');
     if (!modalEl) throw new Error('Modal de pagamento não encontrado no DOM.');
 
+    // Atualiza estado da sessão ANTES de wirar/reabrir — handlers leem daqui.
+    // Se o modal já foi aberto antes pra outro pedido, isso substitui o pedidoId
+    // usado pelas abas/copiar/etc.
+    currentPedidoId = pedidoId;
+    currentPublicKey = publicKey;
+    currentTotal = total;
+
     document.getElementById('pv-pag-total').textContent =
         `R$ ${total.toFixed(2).replace('.', ',')}`;
 
     modalInstance = modalInstance || new bootstrap.Modal(modalEl);
     modalInstance.show();
     trocarAba('pix');
-    carregarPix(pedidoId);
+    carregarPix(currentPedidoId);
 
-    // Wire das abas (só uma vez — flag no dataset evita re-attach em re-abertura do modal)
+    // Wire das abas (só uma vez — flag no dataset evita re-attach em re-abertura
+    // do modal). Handlers usam currentPedidoId/currentTotal do escopo do módulo,
+    // não closures — assim funcionam corretamente em novas sessões.
     if (!modalEl.dataset.wired) {
         modalEl.dataset.wired = '1';
 
@@ -238,9 +256,9 @@ export async function iniciar({ pedidoId, publicKey, total }) {
                 const tab = btn.dataset.tab;
                 trocarAba(tab);
                 if (tab === 'cartao') {
-                    await montarBrickCartao(pedidoId, publicKey, total);
+                    await montarBrickCartao();
                 } else if (tab === 'pix') {
-                    carregarPix(pedidoId);
+                    carregarPix(currentPedidoId);
                 }
             });
         });

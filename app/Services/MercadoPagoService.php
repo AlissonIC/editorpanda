@@ -46,18 +46,19 @@ class MercadoPagoService
      */
     public function criarPagamentoPix(Pedido $pedido): array
     {
-        $payload = [
+        $payload = array_filter([
             'transaction_amount' => (float) $pedido->total,
             'description' => $this->descricaoPedido($pedido),
             'payment_method_id' => 'pix',
             'external_reference' => (string) $pedido->id,
+            'notification_url' => $this->notificationUrl() ?: null,
             'date_of_expiration' => now()->addMinutes($this->pixExpiraMinutos)->format('Y-m-d\TH:i:s.vP'),
             'payer' => [
                 'email' => $pedido->comprador_email,
                 'first_name' => Str::of($pedido->comprador_nome)->before(' ')->limit(60, ''),
                 'last_name' => Str::of($pedido->comprador_nome)->after(' ')->limit(60, '') ?: '.',
             ],
-        ];
+        ], fn ($v) => $v !== null);
 
         $response = $this->post('/v1/payments', $payload, $this->idempotencyKey($pedido, 'pix'));
         $data = $response->json() ?? [];
@@ -99,6 +100,7 @@ class MercadoPagoService
             'transaction_amount' => (float) $pedido->total,
             'description' => $this->descricaoPedido($pedido),
             'external_reference' => (string) $pedido->id,
+            'notification_url' => $this->notificationUrl(),
             'token' => $dados['token'],
             'installments' => (int) ($dados['installments'] ?? 1),
             'payment_method_id' => $dados['payment_method_id'] ?? null,
@@ -164,6 +166,30 @@ class MercadoPagoService
     {
         $qtd = $pedido->itens()->count();
         return "Pedido #{$pedido->id} — {$qtd} " . ($qtd === 1 ? 'item' : 'itens');
+    }
+
+    /**
+     * URL que o MP chama quando o status do payment muda. Enviada por request
+     * (não é webhook global cadastrado no painel MP) — permite ambientes
+     * diferentes (staging/prod) sem conflito. Deve ser HTTPS pública.
+     *
+     * Nossa validação de segurança: SEMPRE consultamos o MP pelo payment_id
+     * com nosso access_token pra confirmar o status real. O body da notificação
+     * não é confiado — atacante que POSTe payment_id forjado só faz nosso
+     * backend consultar o MP e receber 404 ou payment de outra conta.
+     * Rota é rate-limited pra mitigar spam.
+     */
+    private function notificationUrl(): string
+    {
+        // MP EXIGE HTTPS pra notification_url — se APP_URL for HTTP (dev local),
+        // omite (polling client-side cobre). Se rota não existir (deploy velho),
+        // idem — não faz sentido derrubar o payment por causa disso.
+        try {
+            $url = route('publico.pagamento.notificacao');
+            return str_starts_with($url, 'https://') ? $url : '';
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     /**

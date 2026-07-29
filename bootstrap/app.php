@@ -17,6 +17,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => EnsureRole::class,
             'aprovado' => EnsureAprovado::class,
         ]);
+
+        // MP notifica via POST cross-origin — sem token CSRF. Segurança: o
+        // handler consulta o MP pelo payment_id com nosso access_token pra
+        // pegar o status real (body forjado não engana).
+        $middleware->validateCsrfTokens(except: [
+            'pagamento/notificacao',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

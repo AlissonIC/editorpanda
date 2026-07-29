@@ -198,6 +198,99 @@ class PagamentoController extends Controller
         return redirect()->route('publico.album.show', $pedido->album->slug ?? '');
     }
 
+    /**
+     * Endpoint chamado pelo MP quando o status de um payment muda.
+     * Enviado via `notification_url` embutido em cada criação de payment
+     * (não é webhook global). Sem HMAC — validamos re-consultando o payment
+     * no MP com nosso access_token, então body forjado não engana.
+     *
+     * MP envia:
+     *   - POST body: { action, api_version, data: { id }, type, live_mode, ... }
+     *   - Query string: ?data.id=<payment_id>&type=payment
+     *   - Pode enviar type=payment, type=merchant_order — ignoramos merchant_order
+     *
+     * Idempotência: MP costuma reenviar a mesma notificação várias vezes até
+     * receber 2xx. Nosso handler é idempotente (marcarComoPago checa se já foi
+     * pago dentro de transaction+lock, não credita saldo em duplicata).
+     */
+    public function notificacao(Request $request): JsonResponse
+    {
+        // MP manda o ID em vários formatos: body.data.id, body.id, query.data_id, query.id.
+        // Tentamos todos — variações rolam entre versões da API e tipos de notification.
+        $tipo = $request->input('type') ?: $request->query('type');
+        $paymentId = $request->input('data.id')
+            ?: $request->input('id')
+            ?: $request->query('data_id')
+            ?: $request->query('id');
+
+        // Registra TUDO que chega — inclusive lixo/spam — pra ajudar em debug.
+        // Retenção de logs_pagamento cuida do volume.
+        LogPagamento::info(null, 'notificacao.recebida', "type={$tipo} id={$paymentId}", [
+            'query' => $request->query(),
+            'body' => $request->all(),
+        ]);
+
+        // Só processamos notificações de payment. Ignora merchant_order/subscriptions/etc.
+        if ($tipo !== 'payment' || ! $paymentId) {
+            return response()->json(['ignored' => true]);
+        }
+
+        // Consulta o MP com nosso token — se payment_id for forjado, retorna erro
+        // ou payment de outra conta (que não bate com pedido nosso). Nada acontece.
+        try {
+            $consulta = $this->mp->consultarPagamento((string) $paymentId);
+        } catch (\Throwable $e) {
+            LogPagamento::error(null, 'notificacao.consulta_falhou', $e->getMessage(), [
+                'payment_id' => $paymentId,
+            ]);
+            // Devolve 200 mesmo assim — MP tenta reenviar em erro 5xx, mas se o
+            // problema é payment inexistente/forjado, retry infinito é lixo.
+            return response()->json(['ok' => true]);
+        }
+
+        $raw = $consulta['raw'];
+        $externalRef = $raw['external_reference'] ?? null;
+
+        // external_reference = pedido->id (setado na criação). Sem ele, não
+        // conseguimos amarrar — provavelmente é payment de outra conta.
+        $pedido = $externalRef ? Pedido::find((int) $externalRef) : null;
+        if (! $pedido) {
+            LogPagamento::warning(null, 'notificacao.pedido_nao_encontrado', "external_ref={$externalRef}", [
+                'payment_id' => $paymentId,
+            ]);
+            return response()->json(['ok' => true]);
+        }
+
+        // Sanity: o gateway_id do MP tem que bater com o que gravamos ao criar
+        // — se diferente, alguém tá tentando amarrar payment estranho ao nosso pedido.
+        if ($pedido->gateway_id && $pedido->gateway_id !== (string) $paymentId) {
+            LogPagamento::warning($pedido, 'notificacao.gateway_id_divergente',
+                "esperado={$pedido->gateway_id} recebido={$paymentId}");
+            return response()->json(['ok' => true]);
+        }
+
+        // Log só se status mudou — evita poluir com repetições idênticas
+        if ($consulta['status'] !== $pedido->gateway_status) {
+            LogPagamento::info($pedido, 'notificacao.status_mudou',
+                "{$pedido->gateway_status} → {$consulta['status']}", null, $raw);
+            $pedido->update([
+                'gateway_status' => $consulta['status'],
+                'gateway_metadata' => $raw,
+            ]);
+        }
+
+        // Transições finais (idempotentes — marcarComoPago faz lock e check)
+        if ($consulta['status'] === 'approved' && $pedido->status !== Pedido::STATUS_PAGO) {
+            $this->marcarComoPago($pedido, $raw);
+        } elseif (in_array($consulta['status'], ['cancelled', 'rejected'], true)
+                  && $pedido->status !== Pedido::STATUS_CANCELADO) {
+            $pedido->update(['status' => Pedido::STATUS_CANCELADO]);
+            LogPagamento::warning($pedido, 'notificacao.pedido_cancelado', "MP: {$consulta['status']}");
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
     // ---------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------
