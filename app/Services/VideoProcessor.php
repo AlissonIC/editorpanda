@@ -39,10 +39,14 @@ class VideoProcessor
     // 3 threads × 4 workers = 12 cores dedicados, 4 vídeos em paralelo.
     private const OUT_THREADS = 3;
 
-    // Imagem enviada no lugar de vídeo é convertida num MP4 estático desta duração
-    private const IMAGE_DURATION_SEC = 5;
+    // Qualidade JPEG do processado de imagem (2-31, menor = melhor; 3 = alta).
+    private const JPG_QUALITY = 3;
 
     private const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+
+    // HEIC/HEIF precisam de pre-conversão porque ffmpeg 8 do Ubuntu não tem
+    // demuxer nativo — usamos heif-convert (pacote libheif-examples).
+    private const HEIC_EXTENSIONS = ['heic', 'heif'];
 
     private string $ffmpegBin;
     private string $ffprobeBin;
@@ -66,9 +70,17 @@ class VideoProcessor
 
         try {
             // 1) Download do original
-            $ext = pathinfo($video->arquivo_original_path, PATHINFO_EXTENSION) ?: 'mp4';
+            $ext = strtolower(pathinfo($video->arquivo_original_path, PATHINFO_EXTENSION) ?: 'mp4');
             $inputPath = $tempDir . DIRECTORY_SEPARATOR . 'input.' . $ext;
             $this->downloadFromDisk($video->disk ?: 'local', $video->arquivo_original_path, $inputPath);
+
+            $isImagem = $this->isImagem($video->arquivo_original_path);
+
+            // HEIC/HEIF: ffmpeg 8 do Ubuntu não tem demuxer → pre-converte pra JPG.
+            // Retorna o novo caminho pro pipeline. O input.heic original é ignorado.
+            if ($isImagem && in_array($ext, self::HEIC_EXTENSIONS, true)) {
+                $inputPath = $this->preConvertHeic($inputPath, $tempDir);
+            }
 
             // 2) Config do evento
             $config = $this->getEventConfig($video->album_id);
@@ -84,30 +96,47 @@ class VideoProcessor
             // 4) Probe
             $meta = $this->probe($inputPath);
 
-            // 5) Build & run — inclui rotação e espelhamento manual
+            // 5) Config comum
             $config['rotacao'] = (int) ($video->rotacao ?? 0);
             $config['espelhado'] = (bool) ($video->espelhado ?? false);
-            $config['is_imagem'] = $this->isImagem($video->arquivo_original_path);
-            $outputPath = $tempDir . DIRECTORY_SEPARATOR . 'output.mp4';
-            $cmd = $this->buildCommand($inputPath, $outputPath, $logoLocal, $meta, $config);
+            $config['is_imagem'] = $isImagem;
+
+            // Álbuns gratuitos: preview não precisa de marca d'água (não há venda a
+            // proteger — o vídeo/imagem público JÁ É o produto final).
+            $album = Album::with('evento')->find($video->album_id);
+            $isGratuito = $album?->ehGratuito() ?? false;
+
+            // 6) Encode principal — extensão do output depende do tipo
+            $outExt = $isImagem ? 'jpg' : 'mp4';
+            $outputPath = $tempDir . DIRECTORY_SEPARATOR . 'output.' . $outExt;
+
+            $cmd = $isImagem
+                ? $this->buildImageCommand($inputPath, $outputPath, $logoLocal, $config)
+                : $this->buildCommand($inputPath, $outputPath, $logoLocal, $meta, $config);
             $this->runFFmpeg($cmd);
 
-            // 6) Upload da versão limpa (o "processado" — só liberado após compra)
-            $processedRel = $this->processedPathFor($video);
+            // 7) Upload da versão limpa (só liberada após compra em álbuns pagos)
+            $processedRel = $this->processedPathFor($video, $outExt);
             $this->uploadToDisk($video->disk ?: 'local', $outputPath, $processedRel);
 
-            // 6b) Gera a versão de PREVIEW com watermarks a partir da versão limpa
-            //     (segunda passagem de encode, mais rápida — CRF maior e preset faster).
-            //     Este arquivo é o que roda na página pública do álbum.
-            $previewPath = $tempDir . DIRECTORY_SEPARATOR . 'preview.mp4';
-            $this->buildWatermarkedPreview($outputPath, $previewPath);
-            $previewRel = $this->previewPathFor($video);
-            $this->uploadToDisk($video->disk ?: 'local', $previewPath, $previewRel);
+            // 8) Preview público
+            if ($isGratuito) {
+                // Gratuito: preview aponta pro mesmo arquivo processado — não gera
+                // segunda passagem nem consome storage duplicado.
+                $previewRel = $processedRel;
+            } else {
+                $previewPath = $tempDir . DIRECTORY_SEPARATOR . 'preview.' . $outExt;
+                if ($isImagem) {
+                    $this->buildWatermarkedPreviewImagem($outputPath, $previewPath);
+                } else {
+                    $this->buildWatermarkedPreview($outputPath, $previewPath);
+                }
+                $previewRel = $this->previewPathFor($video, $outExt);
+                $this->uploadToDisk($video->disk ?: 'local', $previewPath, $previewRel);
+            }
 
-            // 7) Atualiza vídeo
-            $duracao = $config['is_imagem']
-                ? self::IMAGE_DURATION_SEC
-                : (int) round($meta['duration'] ?? 0);
+            // 9) Atualiza registro
+            $duracao = $isImagem ? 0 : (int) round($meta['duration'] ?? 0);
             $video->update([
                 'arquivo_processado_path' => $processedRel,
                 'arquivo_preview_path' => $previewRel,
@@ -119,6 +148,24 @@ class VideoProcessor
         } finally {
             $this->rmrf($tempDir);
         }
+    }
+
+    /**
+     * Converte HEIC/HEIF pra JPG usando heif-convert. Retorna o novo caminho.
+     * Necessário porque ffmpeg 8 do Ubuntu não tem demuxer HEIF nativo.
+     */
+    private function preConvertHeic(string $heicPath, string $tempDir): string
+    {
+        $jpgPath = $tempDir . DIRECTORY_SEPARATOR . 'input-heic.jpg';
+        $process = new Process(['heif-convert', '-q', '92', $heicPath, $jpgPath]);
+        $process->setTimeout(120);
+        $process->run();
+        if (! $process->isSuccessful() || ! is_file($jpgPath)) {
+            throw new RuntimeException(
+                'heif-convert falhou: ' . substr($process->getErrorOutput() ?: 'sem stderr', 0, 300)
+            );
+        }
+        return $jpgPath;
     }
 
     // ------------------------------------------------------------
@@ -157,29 +204,28 @@ class VideoProcessor
         }
     }
 
-    private function processedPathFor(Video $video): string
+    private function processedPathFor(Video $video, string $ext = 'mp4'): string
     {
         $original = $video->arquivo_original_path ?? '';
         if (str_contains($original, '/originais/')) {
             $rel = str_replace('/originais/', '/processados/', $original);
-            // Força extensão .mp4 (o output é sempre mp4)
             $dir = dirname($rel);
             $base = pathinfo($rel, PATHINFO_FILENAME);
-            return "$dir/$base.mp4";
+            return "$dir/$base.$ext";
         }
-        return "videos/processados/{$video->user_id}/video-{$video->id}.mp4";
+        return "videos/processados/{$video->user_id}/video-{$video->id}.$ext";
     }
 
-    private function previewPathFor(Video $video): string
+    private function previewPathFor(Video $video, string $ext = 'mp4'): string
     {
         $original = $video->arquivo_original_path ?? '';
         if (str_contains($original, '/originais/')) {
             $rel = str_replace('/originais/', '/previews/', $original);
             $dir = dirname($rel);
             $base = pathinfo($rel, PATHINFO_FILENAME);
-            return "$dir/$base.mp4";
+            return "$dir/$base.$ext";
         }
-        return "videos/previews/{$video->user_id}/video-{$video->id}.mp4";
+        return "videos/previews/{$video->user_id}/video-{$video->id}.$ext";
     }
 
     // ------------------------------------------------------------
@@ -300,15 +346,8 @@ class VideoProcessor
             $lastLabel = '[v1]';
         }
 
-        // Inputs: 0 = vídeo/imagem, 1 = logo (se houver)
-        $isImagem = ! empty($config['is_imagem']);
-        $inputs = [];
-        if ($isImagem) {
-            // Loop + duração fixa transformam a imagem estática num MP4 curto
-            $inputs = ['-loop', '1', '-t', (string) self::IMAGE_DURATION_SEC, '-i', $input];
-        } else {
-            $inputs = ['-i', $input];
-        }
+        // Inputs: 0 = vídeo, 1 = logo (se houver). Imagens usam buildImageCommand.
+        $inputs = ['-i', $input];
 
         if ($logo) {
             $inputs[] = '-i';
@@ -324,23 +363,12 @@ class VideoProcessor
 
         $filterComplex = implode(';', $parts);
 
-        $cmd = [
+        return [
             $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
             ...$inputs,
             '-filter_complex', $filterComplex,
             '-map', $lastLabel,
-        ];
-
-        if ($isImagem) {
-            // Sem áudio: imagem não tem trilha
-            $cmd[] = '-an';
-        } else {
-            $cmd[] = '-map';
-            $cmd[] = '0:a?';
-        }
-
-        return [
-            ...$cmd,
+            '-map', '0:a?',
             '-r', (string) self::OUT_FPS,
             '-c:v', 'libx264',
             '-preset', self::OUT_PRESET,
@@ -348,11 +376,80 @@ class VideoProcessor
             '-threads', (string) self::OUT_THREADS,
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
-            ...(! $isImagem ? [
-                '-c:a', 'aac',
-                '-b:a', self::OUT_AUDIO_BITRATE,
-                '-ar', '48000',
-            ] : []),
+            '-c:a', 'aac',
+            '-b:a', self::OUT_AUDIO_BITRATE,
+            '-ar', '48000',
+            $output,
+        ];
+    }
+
+    /**
+     * Constrói o comando FFmpeg para processamento de IMAGEM (single frame → JPG).
+     *
+     * Mesmos overlays da versão vídeo (cover-crop 1080x1920, gradiente, logo),
+     * mas sem loop/duração/áudio. Não pode reutilizar buildCommand porque este
+     * assume um stream de vídeo e emite libx264+aac.
+     */
+    private function buildImageCommand(string $input, string $output, ?string $logo, array $config): array
+    {
+        $W = self::OUT_WIDTH;
+        $H = self::OUT_HEIGHT;
+
+        $espelhado = ! empty($config['espelhado']);
+        $rotacao = (int) ($config['rotacao'] ?? 0);
+
+        $preFilters = '';
+        if ($espelhado) $preFilters .= 'hflip,';
+        $preFilters .= match ($rotacao) {
+            90 => 'transpose=1,',
+            180 => 'transpose=1,transpose=1,',
+            270 => 'transpose=2,',
+            default => '',
+        };
+
+        $vFilter = "{$preFilters}scale={$W}:{$H}:force_original_aspect_ratio=increase,crop={$W}:{$H},setsar=1";
+        $parts = ["[0:v]{$vFilter}[v0]"];
+        $lastLabel = '[v0]';
+
+        if ($config['gradiente_habilitado']) {
+            $pos = $config['logo_posicao'];
+            $gradH = intdiv($H, 3);
+            $alphaMax = 200;
+
+            if (str_starts_with($pos, 'top')) {
+                $alphaExpr = "{$alphaMax}*(1-Y/H)";
+                $overlayY = '0';
+            } elseif (str_starts_with($pos, 'bottom')) {
+                $alphaExpr = "{$alphaMax}*(Y/H)";
+                $overlayY = (string) ($H - $gradH);
+            } else {
+                $alphaExpr = "{$alphaMax}*sin(PI*Y/H)";
+                $overlayY = (string) intdiv($H - $gradH, 2);
+            }
+            $parts[] = "color=c=black:s={$W}x{$gradH}:d=1:r=1,format=rgba,geq=r=0:g=0:b=0:a='{$alphaExpr}'[grad]";
+            $parts[] = "{$lastLabel}[grad]overlay=x=0:y={$overlayY}[v1]";
+            $lastLabel = '[v1]';
+        }
+
+        $inputs = ['-i', $input];
+        if ($logo) {
+            $inputs[] = '-i';
+            $inputs[] = $logo;
+            $logoW = (int) ($W * $config['logo_escala']);
+            $parts[] = "[1:v]scale={$logoW}:-1[logo]";
+            [$x, $y2] = $this->positionCoords($config['logo_posicao']);
+            $parts[] = "{$lastLabel}[logo]overlay=x={$x}:y={$y2}[vout]";
+            $lastLabel = '[vout]';
+        }
+
+        return [
+            $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
+            ...$inputs,
+            '-filter_complex', implode(';', $parts),
+            '-map', $lastLabel,
+            '-frames:v', '1',
+            '-q:v', (string) self::JPG_QUALITY,
+            '-threads', (string) self::OUT_THREADS,
             $output,
         ];
     }
@@ -401,6 +498,34 @@ class VideoProcessor
             LogProcessamento::error('ffmpeg.output_vazio', "Saída ffmpeg com {$size} bytes — provável erro silencioso", ['tamanho' => $size]);
             throw new RuntimeException("ffmpeg gerou arquivo vazio ou minúsculo ({$size} bytes) — provável erro silencioso.");
         }
+    }
+
+    /**
+     * Versão IMAGEM do preview: downscale + watermark tiled, output JPG.
+     * Simétrica a buildWatermarkedPreview (que faz o mesmo pra vídeo/mp4).
+     */
+    private function buildWatermarkedPreviewImagem(string $cleanInput, string $previewOutput): void
+    {
+        $previewW = 540;
+        $previewH = 960;
+
+        $watermarkPng = dirname($previewOutput) . DIRECTORY_SEPARATOR . 'watermark-tiled.png';
+        $this->generateDiagonalWatermarkPng($watermarkPng, $previewW, $previewH);
+
+        $cmd = [
+            $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
+            '-i', $cleanInput,
+            '-i', $watermarkPng,
+            '-filter_complex',
+                "[0:v]scale={$previewW}:{$previewH}:flags=lanczos[scaled];[scaled][1:v]overlay=0:0[out]",
+            '-map', '[out]',
+            '-frames:v', '1',
+            '-q:v', (string) self::JPG_QUALITY,
+            '-threads', '2',
+            $previewOutput,
+        ];
+
+        $this->runFFmpeg($cmd);
     }
 
     /**

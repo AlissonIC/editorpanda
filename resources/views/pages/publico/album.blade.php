@@ -115,7 +115,13 @@
                                        controlslist="nodownload noremoteplayback noplaybackrate"
                                        disablepictureinpicture
                                        oncontextmenu="return false;"
-                                       style="max-width:100%; max-height:100%; background:#000;"></video>
+                                       style="max-width:100%; max-height:100%; background:#000; display:none;"></video>
+                                {{-- Player de IMAGEM: usado quando o item é foto (JPG),
+                                     não vídeo. Alternado via JS baseado em v.is_imagem. --}}
+                                <img id="pv-player-image"
+                                     alt=""
+                                     oncontextmenu="return false;"
+                                     style="max-width:100%; max-height:100%; background:#000; display:none; object-fit:contain;">
                                 {{-- Overlay de aviso quando detectamos tentativa de captura
                                      (aba escondida, janela perdeu foco, PrintScreen). Não
                                      impede captura de fato — o browser não expõe API pra isso

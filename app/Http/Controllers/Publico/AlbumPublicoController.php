@@ -22,7 +22,7 @@ class AlbumPublicoController extends Controller
         // era risco: se o processamento falhasse, o comprador pagava por nada.
         $videos = $album->videos()
             ->where('status', 'concluido')
-            ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos'])
+            ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path'])
             ->orderBy('id')
             ->get()
             ->map(fn ($v) => [
@@ -30,6 +30,11 @@ class AlbumPublicoController extends Controller
                 'nome' => $v->nome,
                 'status' => $v->status,
                 'processado' => true,
+                // is_imagem baseado na EXTENSÃO REAL do arquivo de preview,
+                // não no nome — legados (imagens processadas como mp4 antes) devem
+                // continuar rodando como vídeo até serem reprocessados.
+                'is_imagem' => str_ends_with(strtolower((string) $v->arquivo_preview_path), '.jpg')
+                            || str_ends_with(strtolower((string) $v->arquivo_preview_path), '.jpeg'),
                 'duracao' => $this->formatDuration((int) $v->duracao_segundos),
                 'thumbnail_url' => $v->thumbnail_path ? route('publico.video.thumb', $v->id) : null,
                 'preview_url' => route('publico.video.preview', $v->id),
@@ -93,8 +98,17 @@ class AlbumPublicoController extends Controller
                 abort(500);
             }
         }
+        // Content-Type depende da extensão: imagens processadas saem como .jpg,
+        // vídeos como .mp4. Envio errado quebra o <img>/<video> no cliente.
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $contentType = match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'webp' => 'image/webp',
+            default => 'video/mp4',
+        };
         return Storage::disk('local')->response($path, null, [
-            'Content-Type' => 'video/mp4',
+            'Content-Type' => $contentType,
         ]);
     }
 

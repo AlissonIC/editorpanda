@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const $ = (sel) => modalEl?.querySelector(sel);
     const videoEl = $('#pv-player-video');
+    const imageEl = $('#pv-player-image');
     const titleEl = $('#pv-player-title');
     const posEl = $('#pv-player-pos');
     const nameEl = $('#pv-player-name');
@@ -107,13 +108,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let protectionTimer = null;
 
     function estaAssistindo() {
-        return modalEl?.classList.contains('show') && videoEl && !videoEl.paused;
+        // Modal aberto conta como "assistindo" — inclui player de imagem também,
+        // que não tem estado paused/playing mas precisa da mesma proteção contra
+        // print screen.
+        return modalEl?.classList.contains('show');
     }
 
     function mostrarProtecao() {
         if (!protectionOverlay) return;
         // Pausa o vídeo pra impedir que o usuário assista enquanto captura.
-        // O overlay some após 4s; o usuário precisa dar play de novo pra continuar.
+        // Pra imagem, só o overlay basta (nada pra pausar).
         videoEl?.pause();
         protectionOverlay.classList.add('is-visible');
         clearTimeout(protectionTimer);
@@ -154,9 +158,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (idx < 0 || idx >= videos.length) return;
         indiceAtual = idx;
         const v = videos[idx];
-        videoEl.src = v.preview_url;
-        videoEl.load();
-        videoEl.play().catch(() => {}); // navegador pode bloquear autoplay
+
+        // Alterna player entre <video> e <img> baseado no tipo do item.
+        // Sempre pausa o vídeo antes de trocar pra evitar áudio "vazando"
+        // ao navegar entre itens.
+        if (v.is_imagem) {
+            videoEl.pause?.();
+            videoEl.removeAttribute('src');
+            videoEl.style.display = 'none';
+            imageEl.src = v.preview_url;
+            imageEl.style.display = '';
+        } else {
+            imageEl.removeAttribute('src');
+            imageEl.style.display = 'none';
+            videoEl.style.display = '';
+            videoEl.src = v.preview_url;
+            videoEl.load();
+            videoEl.play().catch(() => {}); // navegador pode bloquear autoplay
+        }
         titleEl.textContent = v.nome;
         nameEl.textContent = v.nome;
         posEl.textContent = `${idx + 1} de ${videos.length}`;
