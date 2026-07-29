@@ -1,5 +1,8 @@
 import { bindPhone } from '../../lib/masks';
-import { iniciar as iniciarPagamento } from '../../lib/pagamento';
+import {
+    mountCardBricks, unmountCardBricks,
+    criarPix, pagarCartao, iniciarPolling, pararPolling,
+} from '../../lib/pagamento';
 import axios from 'axios';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -528,18 +531,27 @@ document.addEventListener('DOMContentLoaded', () => {
         window.showToast?.(`${jaComprados.length} item(s) removido(s) do carrinho.`, 'info');
     });
 
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        // Validação nativa antes de disparar o request — evita ida-e-volta ao servidor.
-        if (!form.checkValidity()) {
-            form.querySelectorAll(':invalid').forEach((el) => el.classList.add('is-invalid'));
-            form.querySelector(':invalid')?.focus();
-            return;
-        }
-        btn.disabled = true;
-        const original = btn.textContent;
-        btn.textContent = gratis ? 'Enviando…' : 'Processando…';
+    // ==================== Fluxo de pagamento inline (sem modal) ====================
+    // Estado das views: checkout (form) → pix OU card-processing → redirect.
+    const checkoutView = document.getElementById('pv-checkout-view');
+    const pixView = document.getElementById('pv-pix-view');
+    const cardProcessingView = document.getElementById('pv-card-processing');
+    const bricksContainer = document.getElementById('pv-bricks-container');
+    const metodoRadios = form.querySelectorAll('input[name="metodo"]');
 
+    function mostrarView(qual) {
+        [checkoutView, pixView, cardProcessingView].forEach((el) => {
+            if (el) el.style.display = 'none';
+        });
+        const alvo = { checkout: checkoutView, pix: pixView, cardProc: cardProcessingView }[qual];
+        if (alvo) alvo.style.display = '';
+    }
+
+    /**
+     * Cria (via /checkout/store) o pedido e devolve { pedido_id, public_key, total }.
+     * Reusável pro fluxo PIX e Cartão.
+     */
+    async function criarPedidoNoServidor() {
         const payload = {
             nome: form.nome.value.trim(),
             email: form.email.value.trim(),
@@ -547,33 +559,213 @@ document.addEventListener('DOMContentLoaded', () => {
             video_ids: [...selectedIds],
             codigo_cupom: form.codigo_cupom?.value.trim().toUpperCase() || null,
         };
+        const { data } = await axios.post(checkoutUrl, payload);
+        return data;
+    }
+
+    // ---- Timer da expiração do PIX (visual) ----
+    let pixTimerInterval = null;
+    function pararTimerPix() {
+        if (pixTimerInterval) { clearInterval(pixTimerInterval); pixTimerInterval = null; }
+    }
+    function iniciarTimerPix(expiresAtIso) {
+        pararTimerPix();
+        const el = document.getElementById('pv-pix-timer');
+        if (!el || !expiresAtIso) return;
+        const expiresAt = new Date(expiresAtIso).getTime();
+        const tick = () => {
+            const restante = Math.max(0, expiresAt - Date.now());
+            if (restante <= 0) {
+                el.textContent = '(expirado — recarregue a página pra tentar de novo)';
+                pararTimerPix();
+                pararPolling();
+                return;
+            }
+            const m = Math.floor(restante / 60000);
+            const s = Math.floor((restante % 60000) / 1000);
+            el.textContent = `(expira em ${m}m${s.toString().padStart(2, '0')}s)`;
+        };
+        tick();
+        pixTimerInterval = setInterval(tick, 1000);
+    }
+
+    // ---- Renderizar PIX na view ----
+    async function iniciarFluxoPix(pedidoData) {
+        mostrarView('pix');
+        document.getElementById('pv-pix-total-msg').textContent =
+            `R$ ${pedidoData.total.toFixed(2).replace('.', ',')}`;
+        document.getElementById('pv-pix-loading').style.display = '';
+        document.getElementById('pv-pix-content').style.display = 'none';
+        try {
+            const pix = await criarPix(pedidoData.pedido_id);
+            document.getElementById('pv-pix-loading').style.display = 'none';
+            document.getElementById('pv-pix-content').style.display = '';
+            document.getElementById('pv-pix-qr').src = `data:image/png;base64,${pix.qr_code_base64}`;
+            document.getElementById('pv-pix-codigo').value = pix.qr_code || '';
+            iniciarTimerPix(pix.expires_at);
+            iniciarPolling(pedidoData.pedido_id, {
+                onApproved: (data) => {
+                    pararTimerPix();
+                    window.location.href = data.redirect;
+                },
+                onFinalNegative: (status) => {
+                    pararTimerPix();
+                    window.showToast?.('Pagamento não concluído. Tente novamente.', 'error');
+                    mostrarView('checkout');
+                },
+            });
+        } catch (err) {
+            document.getElementById('pv-pix-loading').style.display = 'none';
+            window.showToast?.(err.response?.data?.message || 'Falha ao gerar PIX.', 'error');
+            mostrarView('checkout');
+        }
+    }
+
+    // ---- Fluxo de cartão (chamado pelo callback onSubmit do Brick) ----
+    async function processarCartao(pedidoData, tokenPayload) {
+        mostrarView('cardProc');
+        try {
+            const resp = await pagarCartao(pedidoData.pedido_id, tokenPayload);
+            if (resp.status === 'approved' && resp.redirect) {
+                window.location.href = resp.redirect;
+                return;
+            }
+            if (['rejected', 'cancelled'].includes(resp.status)) {
+                window.showToast?.('Cartão recusado. Tente outro cartão ou use PIX.', 'error');
+                mostrarView('checkout');
+                // Reset Bricks pra próxima tentativa
+                await desmontarECopiarCartao(pedidoData);
+                return;
+            }
+            // Assíncrono (3DS / análise) — polling até finalizar
+            document.getElementById('pv-card-msg').textContent = 'Confirmando pagamento…';
+            iniciarPolling(pedidoData.pedido_id, {
+                onApproved: (data) => { window.location.href = data.redirect; },
+                onFinalNegative: () => {
+                    window.showToast?.('Pagamento não concluído. Tente novamente.', 'error');
+                    mostrarView('checkout');
+                },
+            });
+        } catch (err) {
+            window.showToast?.(err.response?.data?.message || 'Erro ao processar cartão.', 'error');
+            mostrarView('checkout');
+        }
+    }
+
+    // Remonta o Bricks limpo pra permitir retry após rejeição
+    async function desmontarECopiarCartao(pedidoData) {
+        await unmountCardBricks();
+        await mountCardBricks('pv-bricks-container', {
+            publicKey: pedidoData.public_key,
+            amount: pedidoData.total,
+            onSubmit: (tokenPayload) => processarCartao(pedidoData, tokenPayload),
+        });
+    }
+
+    // ---- Reação à seleção de método de pagamento ----
+    // Guardamos os dados do último pedido criado — Bricks é montado com o total
+    // atual (baseado na seleção), mas só ativa o pagamento quando existe pedido.
+    // Simplificação: criamos o pedido APENAS no primeiro submit; Bricks usa o
+    // total local (cliente) antes disso.
+    let pedidoCriado = null; // preenche após criarPedidoNoServidor()
+
+    async function atualizarMetodoUI() {
+        const metodo = form.querySelector('input[name="metodo"]:checked')?.value || 'pix';
+        if (metodo === 'cartao') {
+            bricksContainer.style.display = '';
+            btn.style.display = 'none'; // Bricks tem próprio botão
+            // Se já temos pedido criado, monta com public_key real; senão monta
+            // com a public_key vindo do backend após o primeiro submit.
+            // Pra economizar chamada: só monta quando temos public_key.
+            if (pedidoCriado) {
+                await mountCardBricks('pv-bricks-container', {
+                    publicKey: pedidoCriado.public_key,
+                    amount: pedidoCriado.total,
+                    onSubmit: (tp) => processarCartao(pedidoCriado, tp),
+                });
+            } else {
+                // Ainda não criou pedido — cria agora silenciosamente pra ter
+                // public_key + pedido_id prontos quando o comprador finalizar
+                // o cartão. Se falhar (ex: MP não configurado), volta pra PIX.
+                try {
+                    if (!form.checkValidity()) {
+                        // Form inválido: não cria pedido ainda. Bricks fica escondido.
+                        bricksContainer.innerHTML = '<div class="text-muted small text-center py-3">Preencha nome + e-mail acima pra continuar.</div>';
+                        return;
+                    }
+                    pedidoCriado = await criarPedidoNoServidor();
+                    await mountCardBricks('pv-bricks-container', {
+                        publicKey: pedidoCriado.public_key,
+                        amount: pedidoCriado.total,
+                        onSubmit: (tp) => processarCartao(pedidoCriado, tp),
+                    });
+                } catch (err) {
+                    const msg = err.response?.data?.message || 'Erro ao preparar cartão.';
+                    window.showToast?.(msg, 'error');
+                    // Volta pra PIX
+                    form.querySelector('input[name="metodo"][value="pix"]').checked = true;
+                    atualizarMetodoUI();
+                }
+            }
+        } else {
+            // PIX: esconde bricks, mostra botão de submit
+            await unmountCardBricks();
+            bricksContainer.style.display = 'none';
+            btn.style.display = '';
+        }
+    }
+
+    metodoRadios.forEach((r) => r.addEventListener('change', atualizarMetodoUI));
+
+    // Cancelar PIX: para polling e volta pro form (pedido fica em pendente no BD)
+    document.getElementById('pv-pix-cancel')?.addEventListener('click', () => {
+        pararPolling();
+        pararTimerPix();
+        mostrarView('checkout');
+    });
+
+    // Copiar PIX
+    document.getElementById('pv-pix-copiar')?.addEventListener('click', async () => {
+        const codigo = document.getElementById('pv-pix-codigo').value;
+        if (!codigo) return;
+        try {
+            await navigator.clipboard.writeText(codigo);
+            window.showToast?.('Código PIX copiado!', 'success');
+        } catch {
+            document.getElementById('pv-pix-codigo').select();
+            document.execCommand('copy');
+        }
+    });
+
+    // ---- Submit: só chega aqui em PIX ou fluxo grátis ----
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!form.checkValidity()) {
+            form.querySelectorAll(':invalid').forEach((el) => el.classList.add('is-invalid'));
+            form.querySelector(':invalid')?.focus();
+            return;
+        }
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = gratis ? 'Enviando…' : 'Gerando PIX…';
 
         try {
-            const { data } = await axios.post(checkoutUrl, payload);
+            const data = pedidoCriado || await criarPedidoNoServidor();
+            pedidoCriado = data;
             if (data.gratis) {
-                // Evento gratuito: backend enviou links por e-mail — não há
-                // página de confirmação. Mostra toast e reseta o formulário.
                 window.showToast(data.message || 'Enviamos por e-mail em instantes.', 'success');
                 btn.textContent = 'Enviado ✓';
                 setTimeout(() => window.location.reload(), 1500);
                 return;
             }
-            // Fluxo pago: abre modal de pagamento (MP Bricks + PIX). O redirect
-            // pra /pedido/{id} acontece SÓ após o MP aprovar (via polling).
-            const metodoInicial = form.querySelector('input[name="metodo"]:checked')?.value || 'pix';
-            await iniciarPagamento({
-                pedidoId: data.pedido_id,
-                publicKey: data.public_key,
-                total: data.total,
-                metodoInicial,
-            });
-            btn.textContent = original; // permite retry se o modal for fechado
-            btn.disabled = false;
+            // Sempre PIX aqui (cartão passa por onSubmit do Bricks, não pelo form).
+            await iniciarFluxoPix(data);
         } catch (err) {
             const msg = err.response?.data?.message
                 || Object.values(err.response?.data?.errors || {})[0]?.[0]
                 || 'Erro ao finalizar compra.';
             window.showToast(msg, 'error');
+        } finally {
             btn.disabled = false;
             btn.textContent = original;
         }

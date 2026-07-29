@@ -206,179 +206,167 @@
                     @endif
                 </div>
 
-                <form id="pv-checkout-form" novalidate autocomplete="on"
-                      @unless($gratis) data-verificar-url="{{ route('publico.checkout.verificar-email', $album->slug) }}" @endunless>
-                    @csrf
+                {{-- ===== VIEW: FORM DE CHECKOUT ===== --}}
+                <div id="pv-checkout-view">
+                    <form id="pv-checkout-form" novalidate autocomplete="on"
+                          @unless($gratis) data-verificar-url="{{ route('publico.checkout.verificar-email', $album->slug) }}" @endunless>
+                        @csrf
 
-                    <div class="mb-2">
-                        <label class="form-label small" for="pv-form-nome">Seu nome</label>
-                        <input type="text" name="nome" id="pv-form-nome"
-                               class="form-control"
-                               autocomplete="name"
-                               autocapitalize="words"
-                               spellcheck="false"
-                               required minlength="2" maxlength="120">
-                        <div class="invalid-feedback">Informe seu nome.</div>
-                    </div>
-
-                    <div class="mb-2">
-                        <label class="form-label small" for="pv-form-email">E-mail</label>
-                        <input type="email" name="email" id="pv-form-email"
-                               class="form-control"
-                               autocomplete="email"
-                               inputmode="email"
-                               autocapitalize="off"
-                               spellcheck="false"
-                               required maxlength="180">
-                        <div class="invalid-feedback">Informe um e-mail válido.</div>
-                    </div>
-
-                    {{-- Overlay de pré-checagem: preenche via JS quando o email
-                         é válido e há itens já comprados por esse comprador. --}}
-                    <div id="pv-pre-check" class="alert alert-warning small mb-3 d-none" role="status">
-                        <div class="fw-semibold mb-1" id="pv-pre-check-title">—</div>
-                        <div class="text-muted mb-2" id="pv-pre-check-msg">—</div>
-                        <div class="d-flex flex-wrap gap-2">
-                            <button type="button" class="btn btn-sm btn-dark" id="pv-pre-check-mail">
-                                <i class="bi bi-envelope me-1"></i>Receber por e-mail
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-dark" id="pv-pre-check-remove">
-                                <i class="bi bi-cart-x me-1"></i>Remover do carrinho
-                            </button>
+                        <div class="mb-2">
+                            <label class="form-label small" for="pv-form-whats">WhatsApp <span class="text-muted">(opcional)</span></label>
+                            <input type="tel" name="whatsapp" id="pv-form-whats"
+                                   class="form-control"
+                                   autocomplete="tel-national"
+                                   inputmode="tel"
+                                   placeholder="(11) 99999-9999"
+                                   maxlength="20">
                         </div>
-                    </div>
 
-                    <div class="mb-3">
-                        <label class="form-label small" for="pv-form-whats">WhatsApp <span class="text-muted">(opcional)</span></label>
-                        <input type="tel" name="whatsapp" id="pv-form-whats"
-                               class="form-control"
-                               autocomplete="tel-national"
-                               inputmode="tel"
-                               placeholder="(11) 99999-9999"
-                               maxlength="20">
-                    </div>
+                        <div class="mb-2">
+                            <label class="form-label small" for="pv-form-nome">Nome completo</label>
+                            <input type="text" name="nome" id="pv-form-nome"
+                                   class="form-control"
+                                   autocomplete="name"
+                                   autocapitalize="words"
+                                   spellcheck="false"
+                                   required minlength="2" maxlength="120">
+                            <div class="invalid-feedback">Informe seu nome completo.</div>
+                        </div>
 
-                    @if(! $gratis)
-                        {{-- Método de pagamento — pré-seleciona a aba do modal.
-                             Layout de tiles pra ficar tocável no mobile e claro visualmente. --}}
-                        <div class="mb-3">
-                            <label class="form-label small">Forma de pagamento</label>
-                            <div class="pv-metodo-tiles">
-                                <label class="pv-metodo-tile">
-                                    <input type="radio" name="metodo" value="pix" checked>
-                                    <span class="pv-metodo-tile-body">
-                                        <i class="bi bi-qr-code"></i>
-                                        <span class="fw-semibold small">PIX</span>
-                                        <span class="text-muted" style="font-size:.7rem;">Aprovação em segundos</span>
-                                    </span>
-                                </label>
-                                <label class="pv-metodo-tile">
-                                    <input type="radio" name="metodo" value="cartao">
-                                    <span class="pv-metodo-tile-body">
-                                        <i class="bi bi-credit-card"></i>
-                                        <span class="fw-semibold small">Cartão</span>
-                                        <span class="text-muted" style="font-size:.7rem;">Até 12x</span>
-                                    </span>
-                                </label>
+                        <div class="mb-2">
+                            <label class="form-label small" for="pv-form-email">E-mail</label>
+                            <input type="email" name="email" id="pv-form-email"
+                                   class="form-control"
+                                   autocomplete="email"
+                                   inputmode="email"
+                                   autocapitalize="off"
+                                   spellcheck="false"
+                                   required maxlength="180">
+                            <div class="invalid-feedback">Informe um e-mail válido.</div>
+                        </div>
+
+                        {{-- Overlay de pré-checagem: mostra quando o email tem itens já comprados. --}}
+                        <div id="pv-pre-check" class="alert alert-warning small mb-3 d-none" role="status">
+                            <div class="fw-semibold mb-1" id="pv-pre-check-title">—</div>
+                            <div class="text-muted mb-2" id="pv-pre-check-msg">—</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm btn-dark" id="pv-pre-check-mail">
+                                    <i class="bi bi-envelope me-1"></i>Receber por e-mail
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-dark" id="pv-pre-check-remove">
+                                    <i class="bi bi-cart-x me-1"></i>Remover do carrinho
+                                </button>
                             </div>
                         </div>
 
-                        {{-- Cupom colapsável — reduz ruído visual pra maioria que não usa. --}}
-                        <div class="mb-3">
-                            <a class="small text-muted text-decoration-none" data-bs-toggle="collapse"
-                               href="#pv-cupom-collapse" role="button">
-                                <i class="bi bi-tag me-1"></i>Tem cupom de desconto?
-                            </a>
-                            <div class="collapse mt-2" id="pv-cupom-collapse">
-                                <input type="text" name="codigo_cupom" id="pv-form-cupom"
-                                       class="form-control text-uppercase"
-                                       autocapitalize="characters"
-                                       autocomplete="off"
-                                       spellcheck="false"
-                                       placeholder="Digite o código" maxlength="60">
+                        @if(! $gratis)
+                            {{-- Forma de pagamento como botões grandes e touch-friendly. --}}
+                            <div class="mb-3">
+                                <label class="form-label small">Forma de pagamento</label>
+                                <div class="pv-metodo-tiles">
+                                    <label class="pv-metodo-tile">
+                                        <input type="radio" name="metodo" value="pix" checked>
+                                        <span class="pv-metodo-tile-body">
+                                            <i class="bi bi-qr-code"></i>
+                                            <span class="pv-metodo-title">PIX</span>
+                                            <span class="pv-metodo-sub">Aprovação em segundos</span>
+                                        </span>
+                                    </label>
+                                    <label class="pv-metodo-tile">
+                                        <input type="radio" name="metodo" value="cartao">
+                                        <span class="pv-metodo-tile-body">
+                                            <i class="bi bi-credit-card"></i>
+                                            <span class="pv-metodo-title">Cartão</span>
+                                            <span class="pv-metodo-sub">Até 12x</span>
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {{-- Bricks CardPayment monta aqui quando Cartão é selecionado.
+                                 Tem seu próprio botão de "Pagar" — nosso "Finalizar compra"
+                                 fica escondido quando Cartão está ativo (evita duplo submit). --}}
+                            <div id="pv-bricks-container" class="mb-3" style="display:none;"></div>
+
+                            {{-- Cupom colapsável — reduz ruído visual. --}}
+                            <div class="mb-3">
+                                <a class="small text-muted text-decoration-none" data-bs-toggle="collapse"
+                                   href="#pv-cupom-collapse" role="button">
+                                    <i class="bi bi-tag me-1"></i>Tem cupom de desconto?
+                                </a>
+                                <div class="collapse mt-2" id="pv-cupom-collapse">
+                                    <input type="text" name="codigo_cupom" id="pv-form-cupom"
+                                           class="form-control text-uppercase"
+                                           autocapitalize="characters"
+                                           autocomplete="off"
+                                           spellcheck="false"
+                                           placeholder="Digite o código" maxlength="60">
+                                </div>
+                            </div>
+                        @endif
+
+                        <button type="submit" class="btn btn-dark w-100 py-2 fw-semibold" id="pv-checkout-btn" disabled>
+                            {{ $gratis ? 'Baixar grátis' : 'Finalizar compra' }}
+                        </button>
+                        <div class="text-center small text-muted mt-2">
+                            <a href="{{ route('publico.acesso') }}">Já comprei — acessar meus vídeos</a>
+                        </div>
+                    </form>
+                </div>
+
+                @unless($gratis)
+                    {{-- ===== VIEW: PIX (substitui o form após submit se método=PIX) ===== --}}
+                    <div id="pv-pix-view" style="display:none;">
+                        <h5 class="fw-bold text-center mb-1">Pague com PIX pra concluir</h5>
+                        <p class="text-center text-muted small mb-3">
+                            Total: <strong id="pv-pix-total-msg" class="text-dark">R$ 0,00</strong>
+                        </p>
+                        <div id="pv-pix-loading" class="text-center py-4">
+                            <div class="spinner-border text-dark" role="status"></div>
+                            <div class="small text-muted mt-2">Gerando QR Code…</div>
+                        </div>
+                        <div id="pv-pix-content" style="display:none;">
+                            <div class="text-center mb-3">
+                                <img id="pv-pix-qr" alt="QR Code PIX"
+                                     style="max-width:220px; width:100%; border:1px solid #eee; padding:8px; border-radius:.5rem;">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">Copia e cola</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="text" id="pv-pix-codigo" class="form-control font-monospace" readonly style="font-size:.72rem;">
+                                    <button type="button" class="btn btn-outline-secondary" id="pv-pix-copiar" title="Copiar código">
+                                        <i class="bi bi-clipboard"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="alert alert-info small mb-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Abra o app do seu banco, escolha PIX e cole o código
+                                (ou escaneie o QR). A confirmação é automática —
+                                pode deixar esta página aberta.
+                            </div>
+                            <div class="text-center small text-muted">
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                Aguardando pagamento… <span id="pv-pix-timer" class="fw-semibold"></span>
                             </div>
                         </div>
-                    @endif
-
-                    <button type="submit" class="btn btn-dark w-100 py-2 fw-semibold" id="pv-checkout-btn" disabled>
-                        {{ $gratis ? 'Baixar grátis' : 'Finalizar compra' }}
-                    </button>
-                    <div class="text-center small text-muted mt-2">
-                        <a href="{{ route('publico.acesso') }}">Já comprei — acessar meus vídeos</a>
+                        <button type="button" class="btn btn-link btn-sm w-100 mt-3 text-muted" id="pv-pix-cancel">
+                            Cancelar e voltar
+                        </button>
                     </div>
-                </form>
+
+                    {{-- ===== VIEW: PROCESSANDO CARTÃO ===== --}}
+                    <div id="pv-card-processing" style="display:none;" class="text-center py-4">
+                        <div class="spinner-border text-dark mb-3" role="status"></div>
+                        <h5 class="fw-semibold" id="pv-card-msg">Processando pagamento…</h5>
+                        <p class="text-muted small mb-0">Não feche esta página. O redirecionamento é automático quando o pagamento for confirmado.</p>
+                    </div>
+                @endunless
             </div>
         </div>
     </div>
 </section>
 
-@unless($gratis)
-    {{-- Modal de PAGAMENTO — abre após submit do checkout. Duas abas: PIX e Cartão.
-         O JS decide qual mostrar por padrão, aciona o MP Bricks, faz polling de status,
-         e redireciona pra /pedido/{id} quando aprovado. --}}
-    <div class="modal fade" id="modal-pagamento" tabindex="-1" aria-hidden="true"
-         data-bs-backdrop="static" data-bs-keyboard="false">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Pagamento — <span id="pv-pag-total">R$ 0,00</span></h5>
-                    <button type="button" class="btn-close" id="pv-pag-close" title="Cancelar"></button>
-                </div>
-                <div class="modal-body">
-                    <ul class="nav nav-pills mb-3 justify-content-center" id="pv-pag-tabs" role="tablist">
-                        <li class="nav-item">
-                            <button type="button" class="nav-link active" data-tab="pix">
-                                <i class="bi bi-qr-code me-1"></i>PIX
-                            </button>
-                        </li>
-                        <li class="nav-item">
-                            <button type="button" class="nav-link" data-tab="cartao">
-                                <i class="bi bi-credit-card me-1"></i>Cartão de crédito
-                            </button>
-                        </li>
-                    </ul>
-
-                    {{-- Aba PIX --}}
-                    <div id="pv-pag-pix" class="pv-pag-tab-content">
-                        <div id="pv-pag-pix-loading" class="text-center py-4">
-                            <div class="spinner-border text-dark" role="status"></div>
-                            <div class="small text-muted mt-2">Gerando QR Code…</div>
-                        </div>
-                        <div id="pv-pag-pix-content" style="display:none;">
-                            <div class="text-center mb-3">
-                                <img id="pv-pag-pix-qr" alt="QR Code PIX"
-                                     style="max-width:220px; border:1px solid #eee; padding:8px; border-radius:.5rem;">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label small">Copia e cola</label>
-                                <div class="input-group">
-                                    <input type="text" id="pv-pag-pix-codigo" class="form-control font-monospace small" readonly>
-                                    <button type="button" class="btn btn-outline-secondary" id="pv-pag-pix-copiar">
-                                        <i class="bi bi-clipboard"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="alert alert-info small mb-0 mt-3">
-                                <i class="bi bi-info-circle me-1"></i>
-                                Abra o app do seu banco, escolha PIX e cole o código
-                                (ou escaneie o QR). A confirmação é automática — pode
-                                deixar esta aba aberta. <span id="pv-pag-pix-timer" class="fw-semibold"></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Aba Cartão --}}
-                    <div id="pv-pag-cartao" class="pv-pag-tab-content" style="display:none;">
-                        <div id="cardPaymentBrick_container"></div>
-                    </div>
-
-                    {{-- Estado global (aguardando / aprovado / rejeitado) --}}
-                    <div id="pv-pag-status" class="alert d-none mt-3" role="status"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-@endunless
 @endsection
 
 @push('scripts')
