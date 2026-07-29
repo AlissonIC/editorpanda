@@ -452,6 +452,27 @@ document.addEventListener('DOMContentLoaded', () => {
         ultimaVerificacao = { chave: null, jaComprados: [] };
     }
 
+    /**
+     * Renderiza o overlay #pv-pre-check com base numa lista de IDs já comprados.
+     * Chamado tanto pelo blur do email quanto pelo tratamento de erro do backend
+     * (quando o submit acha itens já pagos que a verificação prévia não pegou).
+     */
+    function exibirPreCheck(jaComprados, totalSelecionado, email) {
+        if (!preCheckBox || !jaComprados.length) return;
+        ultimaVerificacao = { chave: null, jaComprados };
+        const qtd = jaComprados.length;
+        const total = totalSelecionado || qtd;
+        preCheckTitle.textContent = qtd === total
+            ? `Todos os ${total} itens já foram comprados por este e-mail.`
+            : `${qtd} de ${total} itens já foram comprados por este e-mail.`;
+        preCheckMsg.textContent = `Enviaremos os links de download para ${email} — clique abaixo. Ou remova os itens já comprados do carrinho para pagar só o restante.`;
+        // Se tudo comprado, "remover" zeraria o carrinho — só faz sentido "receber por e-mail".
+        preCheckRemoveBtn.classList.toggle('d-none', qtd === total);
+        preCheckBox.classList.remove('d-none');
+        // Foca o overlay pra usuário perceber (e leitores de tela anunciarem).
+        preCheckBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
     async function verificarPreCompra() {
         if (!verificarUrl || !preCheckBox) return; // álbum grátis (não tem verificação)
         const email = emailInput?.value.trim().toLowerCase();
@@ -465,26 +486,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const { data } = await axios.post(verificarUrl, { email, video_ids: ids });
-            const jaComprados = data.ja_comprados || [];
+            const jaComprados = (data.ja_comprados || []).map(Number);
             ultimaVerificacao = { chave, jaComprados };
-
-            if (jaComprados.length === 0) {
-                esconderPreCheck();
-                return;
-            }
-            const total = ids.length;
-            const qtd = jaComprados.length;
-            preCheckTitle.textContent = qtd === total
-                ? `Todos os ${total} itens já foram comprados por este e-mail.`
-                : `${qtd} de ${total} itens já foram comprados por este e-mail.`;
-            preCheckMsg.textContent = `Podemos enviar os links de download para ${email}. Ou remova os itens já comprados do carrinho para pagar só o restante.`;
-            // Se tudo comprado, "remover" resultaria em carrinho vazio — esconde a opção.
-            preCheckRemoveBtn.classList.toggle('d-none', qtd === total);
-            preCheckBox.classList.remove('d-none');
+            if (jaComprados.length === 0) return esconderPreCheck();
+            exibirPreCheck(jaComprados, ids.length, email);
         } catch (err) {
             // Erro silencioso — não bloqueia o fluxo, comprador ainda pode tentar checkout
             console.warn('[pre-check] falha:', err?.message);
         }
+    }
+
+    /**
+     * Se o erro do backend traz `ja_comprados`, mostra o overlay em vez de toast.
+     * Retorna true se tratou (caller não precisa mostrar toast); false caso contrário.
+     */
+    function tratarErroJaComprado(err) {
+        const data = err?.response?.data;
+        const jaComprados = (data?.ja_comprados || []).map(Number);
+        if (!jaComprados.length) return false;
+        const email = emailInput?.value.trim().toLowerCase() || '';
+        exibirPreCheck(jaComprados, selectedIds.size, email);
+        return true;
     }
 
     emailInput?.addEventListener('blur', verificarPreCompra);
@@ -700,9 +722,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         onSubmit: (tp) => processarCartao(pedidoCriado, tp),
                     });
                 } catch (err) {
-                    const msg = err.response?.data?.message || 'Erro ao preparar cartão.';
-                    window.showToast?.(msg, 'error');
-                    // Volta pra PIX
+                    // Se o erro é "já comprado", overlay #pv-pre-check cobre — não vira toast.
+                    if (!tratarErroJaComprado(err)) {
+                        const msg = err.response?.data?.message || 'Erro ao preparar cartão.';
+                        window.showToast?.(msg, 'error');
+                    }
+                    // Volta pra PIX independentemente — cartão não pode montar sem pedido.
                     form.querySelector('input[name="metodo"][value="pix"]').checked = true;
                     atualizarMetodoUI();
                 }
@@ -761,10 +786,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // Sempre PIX aqui (cartão passa por onSubmit do Bricks, não pelo form).
             await iniciarFluxoPix(data);
         } catch (err) {
-            const msg = err.response?.data?.message
-                || Object.values(err.response?.data?.errors || {})[0]?.[0]
-                || 'Erro ao finalizar compra.';
-            window.showToast(msg, 'error');
+            // Erro "já comprado" vira overlay no bloco do checkout, não toast.
+            if (!tratarErroJaComprado(err)) {
+                const msg = err.response?.data?.message
+                    || Object.values(err.response?.data?.errors || {})[0]?.[0]
+                    || 'Erro ao finalizar compra.';
+                window.showToast(msg, 'error');
+            }
         } finally {
             btn.disabled = false;
             btn.textContent = original;

@@ -212,25 +212,28 @@
                           @unless($gratis) data-verificar-url="{{ route('publico.checkout.verificar-email', $album->slug) }}" @endunless>
                         @csrf
 
-                        <div class="mb-2">
-                            <label class="form-label small" for="pv-form-whats">WhatsApp <span class="text-muted">(opcional)</span></label>
-                            <input type="tel" name="whatsapp" id="pv-form-whats"
-                                   class="form-control"
-                                   autocomplete="tel-national"
-                                   inputmode="tel"
-                                   placeholder="(11) 99999-9999"
-                                   maxlength="20">
-                        </div>
-
-                        <div class="mb-2">
-                            <label class="form-label small" for="pv-form-nome">Nome completo</label>
-                            <input type="text" name="nome" id="pv-form-nome"
-                                   class="form-control"
-                                   autocomplete="name"
-                                   autocapitalize="words"
-                                   spellcheck="false"
-                                   required minlength="2" maxlength="120">
-                            <div class="invalid-feedback">Informe seu nome completo.</div>
+                        {{-- Nome + WhatsApp na mesma linha (nome dominante, whats opcional).
+                             No mobile (<576px) empilha automaticamente via col-sm. --}}
+                        <div class="row g-2 mb-2">
+                            <div class="col-sm-7">
+                                <label class="form-label small" for="pv-form-nome">Nome completo</label>
+                                <input type="text" name="nome" id="pv-form-nome"
+                                       class="form-control"
+                                       autocomplete="name"
+                                       autocapitalize="words"
+                                       spellcheck="false"
+                                       required minlength="2" maxlength="120">
+                                <div class="invalid-feedback">Informe seu nome completo.</div>
+                            </div>
+                            <div class="col-sm-5">
+                                <label class="form-label small" for="pv-form-whats">WhatsApp <span class="text-muted">(opcional)</span></label>
+                                <input type="tel" name="whatsapp" id="pv-form-whats"
+                                       class="form-control"
+                                       autocomplete="tel-national"
+                                       inputmode="tel"
+                                       placeholder="(11) 99999-9999"
+                                       maxlength="20">
+                            </div>
                         </div>
 
                         <div class="mb-2">

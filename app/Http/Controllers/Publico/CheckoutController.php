@@ -108,11 +108,19 @@ class CheckoutController extends Controller
                 ->where('pedidos.status', 'pago')
                 ->whereIn('pedido_itens.video_id', $videos->pluck('id'))
                 ->pluck('pedido_itens.video_id')
+                ->map(fn ($id) => (int) $id)
                 ->all();
             if ($jaPagos) {
                 $videos = $videos->reject(fn ($v) => in_array($v->id, $jaPagos, true))->values();
-                abort_if($videos->isEmpty(), 422,
-                    'Todos os vídeos selecionados já foram comprados por este e-mail.');
+                if ($videos->isEmpty()) {
+                    // Devolve os IDs pro front renderizar o overlay elegante
+                    // (com botões "Acessar conta" / "Remover do carrinho"),
+                    // em vez de só uma mensagem-toast.
+                    abort(response()->json([
+                        'message' => 'Todos os vídeos selecionados já foram comprados por este e-mail.',
+                        'ja_comprados' => $jaPagos,
+                    ], 422));
+                }
             }
         }
 
