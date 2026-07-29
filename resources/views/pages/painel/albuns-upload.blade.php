@@ -142,23 +142,16 @@
             </div>
 
             <div class="pv-scroll-area" id="pv-scroll">
-                {{-- Fila em progresso --}}
-                <div id="queue-wrap" class="pv-block d-none">
-                    <div class="pv-block-title">Enviando agora</div>
-                    <ul id="queue-list" class="pv-view-list list-unstyled m-0"></ul>
-                </div>
+                {{-- Lista única: uploads em progresso aparecem no topo como cards
+                     placeholder e viram cards "concluídos" no mesmo <li> conforme
+                     o backend processa. Nenhuma seção separada. --}}
+                <ul id="videos-list" class="pv-view-list list-unstyled m-0">
+                    <li class="text-muted small py-3">Carregando…</li>
+                </ul>
 
-                {{-- Vídeos já enviados --}}
-                <div id="videos-wrap" class="pv-block">
-                    <div class="pv-block-title">Enviados</div>
-                    <ul id="videos-list" class="pv-view-list list-unstyled m-0">
-                        <li class="text-muted small py-3">Carregando…</li>
-                    </ul>
-
-                    {{-- Sentinel do infinite scroll --}}
-                    <div id="pv-sentinel" class="pv-sentinel d-none">
-                        <div class="spinner-border spinner-border-sm text-secondary"></div>
-                    </div>
+                {{-- Sentinel do infinite scroll --}}
+                <div id="pv-sentinel" class="pv-sentinel d-none">
+                    <div class="spinner-border spinner-border-sm text-secondary"></div>
                 </div>
             </div>
         </div>

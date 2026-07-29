@@ -397,106 +397,104 @@ class VideoProcessor
     }
 
     /**
-     * Gera a versão preview (com watermarks tiled) a partir do MP4 limpo já processado.
+     * Gera a versão preview a partir do MP4 limpo já processado:
+     *   - Downscale pra 540x960 (metade) — captura em screen-record fica ruim
+     *   - Watermark ESTÁTICA: PNG gerada via PHP GD com texto tiled rotacionado
+     *     em diagonal (padrão tipo "SAMPLE"); sobreposta pelo FFmpeg com overlay
+     *   - CRF 28 + preset veryfast — arquivo leve, encode rápido
+     *   - Audio re-encodado em baixa taxa (48kbps) — impede reaproveitamento
      *
-     * Segunda passagem de encode: `-preset faster` + `-crf 26` (qualidade menor,
-     * arquivo mais leve, ~2x mais rápido que o encode principal). Audio é copiado
-     * sem re-encode. O visual tem 8 réplicas do nome do site espalhadas + um aviso
-     * grande centralizado — projetado pra ser difícil de remover num pós-processamento.
+     * A PNG é gerada dinamicamente pra cada job (~200ms). Não cacheamos porque
+     * texto/tamanho podem mudar por config e o overhead é irrelevante.
      */
     private function buildWatermarkedPreview(string $cleanInput, string $previewOutput): void
     {
-        $font = $this->resolveWatermarkFont();
-        $texto = (string) config('services.watermark.texto', 'PANDAVIDEO');
+        // Preview em 540x960 (retrato, metade do processado 1080x1920)
+        $previewW = 540;
+        $previewH = 960;
 
-        // Escapa caracteres que o filtergraph do FFmpeg interpreta:
-        //   ':'  → separador de opções
-        //   '\'  → escape literal
-        //   "'"  → delimitador de string
-        $escapeText = fn (string $s) => str_replace(
-            ["\\", "'", ':', ',', '%'],
-            ["\\\\", "\\'", '\\:', '\\,', '\\%'],
-            $s,
-        );
-        $textoEsc = $escapeText($texto);
-        $avisoEsc = $escapeText('PREVIEW - PROIBIDA REPRODUCAO');
-        // Fonte no filtergraph: barras normais + escape do `:` do drive-letter no Windows
-        $fontEsc = str_replace(':', '\\:', str_replace('\\', '/', $font));
-
-        // Filtros: primeiro downscale (540x960 = metade do processado 1080x1920),
-        // depois watermarks já dimensionadas pra essa resolução.
-        $filtros = [
-            // Lanczos: melhor qualidade de downscale, ainda barato pro tamanho.
-            'scale=540:960:flags=lanczos',
-        ];
-
-        // Watermarks ANIMADAS: 10 faixas em Y fixos, X percorre continuamente.
-        // Alternamos direção (LTR ↔ RTL) e usamos velocidades/fases diferentes
-        // por faixa. Em qualquer frame há 10 textos visíveis em posições que
-        // MUDAM a cada frame → screen-record captura tudo, mas o pattern não
-        // fica no mesmo pixel dois frames seguidos, então mascarar em pós
-        // é impraticável (blur/inpainting destruiria o vídeo inteiro).
-        //
-        // LTR: x = mod(t*V + phase, W+tw) - tw     → entra à esquerda, sai à direita
-        // RTL: x = W - mod(t*V + phase, W+tw)      → entra à direita, sai à esquerda
-        $faixas = [
-            // [y_fracional, velocidade_px_s, phase_px, alpha, direcao]
-            [0.06,  90,   0, 0.55, 'ltr'],
-            [0.14, 110, 200, 0.55, 'rtl'],
-            [0.22,  80, 100, 0.55, 'ltr'],
-            [0.30, 100, 300, 0.55, 'rtl'],
-            [0.38,  85,   0, 0.55, 'ltr'],
-            [0.62,  95, 400, 0.55, 'rtl'],
-            [0.70,  75, 150, 0.55, 'ltr'],
-            [0.78, 105, 250, 0.55, 'rtl'],
-            [0.86,  80,  50, 0.55, 'ltr'],
-            [0.94,  95, 350, 0.55, 'rtl'],
-        ];
-        foreach ($faixas as [$yFrac, $vel, $phase, $alpha, $dir]) {
-            $xExpr = $dir === 'ltr'
-                ? "mod(t*{$vel}+{$phase}\\,w+tw)-tw"
-                : "w-mod(t*{$vel}+{$phase}\\,w+tw)";
-            $filtros[] = sprintf(
-                "drawtext=fontfile='%s':text='%s':fontsize=22:fontcolor=white@%.2f:borderw=2:bordercolor=black@0.70:x='%s':y=h*%.2f-th/2",
-                $fontEsc, $textoEsc, $alpha, $xExpr, $yFrac,
-            );
-        }
-
-        // Aviso central "respirando": alpha oscila entre 0.54 e 0.90 a cada
-        // segundo — dificulta detecção automática de watermark estático.
-        // Fontsize reduzido pra caber em qualquer preview (540px de largura).
-        $filtros[] = sprintf(
-            "drawtext=fontfile='%s':text='%s':fontsize=22:fontcolor=white:alpha='0.72+0.18*sin(2*PI*t)':borderw=2:bordercolor=black@0.9:x=(w-tw)/2:y=(h-th)/2",
-            $fontEsc, $avisoEsc,
-        );
-
-        // Rodapé fixo com branding (reforça origem)
-        $filtros[] = 'drawbox=x=0:y=h-56:w=iw:h=36:color=black@0.65:t=fill';
-        $filtros[] = sprintf(
-            "drawtext=fontfile='%s':text='%s':fontsize=20:fontcolor=white@0.95:x=(w-tw)/2:y=h-46",
-            $fontEsc, $textoEsc,
-        );
-
-        $vf = implode(',', $filtros);
+        // Gera a PNG do watermark ao lado do output (mesma pasta temp — é limpa ao fim)
+        $watermarkPng = dirname($previewOutput) . DIRECTORY_SEPARATOR . 'watermark-tiled.png';
+        $this->generateDiagonalWatermarkPng($watermarkPng, $previewW, $previewH);
 
         $cmd = [
             $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
             '-i', $cleanInput,
-            '-map', '0:v',
+            '-i', $watermarkPng,
+            '-filter_complex',
+                "[0:v]scale={$previewW}:{$previewH}:flags=lanczos[scaled];[scaled][1:v]overlay=0:0[out]",
+            '-map', '[out]',
             '-map', '0:a?',              // audio opcional (imagem não tem)
-            '-vf', $vf,
             '-c:v', 'libx264',
-            '-preset', 'veryfast',       // encode rápido
-            '-crf', '28',                // qualidade menor — preview é ruim de propósito
+            '-preset', 'veryfast',
+            '-crf', '28',
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
             '-c:a', 'aac',
-            '-b:a', '48k',               // audio degradado — impede reaproveitamento
+            '-b:a', '48k',
             '-ar', '44100',
             $previewOutput,
         ];
 
         $this->runFFmpeg($cmd);
+    }
+
+    /**
+     * Cria PNG semi-transparente com o texto do site tiled em diagonal.
+     * Padrão denso — cobre o frame inteiro em 30°. Halo branco dá contraste
+     * em cenas claras E escuras. Remover em pós exige inpainting que arruína
+     * o vídeo original.
+     */
+    private function generateDiagonalWatermarkPng(string $outputPath, int $width, int $height): void
+    {
+        if (! function_exists('imagettftext')) {
+            throw new RuntimeException(
+                'PHP GD sem suporte a FreeType — instale php-gd com --with-freetype.'
+            );
+        }
+
+        $font = $this->resolveWatermarkFont();
+        $texto = (string) config('services.watermark.texto', 'PANDAVIDEO');
+
+        // Canvas RGBA totalmente transparente
+        $img = imagecreatetruecolor($width, $height);
+        imagealphablending($img, false);
+        imagesavealpha($img, true);
+        $transparent = imagecolorallocatealpha($img, 0, 0, 0, 127);
+        imagefill($img, 0, 0, $transparent);
+        imagealphablending($img, true);
+
+        // Alpha em GD é invertido: 0=opaco, 127=transparente
+        $preto  = imagecolorallocatealpha($img, 0, 0, 0, 45);        // ~65% opaco
+        $branco = imagecolorallocatealpha($img, 255, 255, 255, 40);  // ~68% opaco
+
+        $fontSize = 16;
+        $angle = 30; // graus (sentido anti-horário no GD)
+
+        // Grid diagonal — quanto menor stepX/stepY, mais denso o padrão.
+        $stepX = 110;
+        $stepY = 90;
+
+        // Extra pra fora do frame — texto rotacionado precisa extrapolar
+        // as bordas pra cobrir cantos sem "buracos".
+        $overshoot = 120;
+
+        for ($y = -$overshoot; $y < $height + $overshoot; $y += $stepY) {
+            // Deslocamento X alternado por linha — efeito "tijolo diagonal"
+            $offset = ((intdiv($y + $overshoot, $stepY)) % 2) === 0 ? 0 : intdiv($stepX, 2);
+            for ($x = -$overshoot; $x < $width + $overshoot; $x += $stepX) {
+                $xPos = $x + $offset;
+                // Halo branco (1px sudeste) — contraste em fundo escuro
+                imagettftext($img, $fontSize, $angle, $xPos + 1, $y + 1, $branco, $font, $texto);
+                imagettftext($img, $fontSize, $angle, $xPos,      $y,      $preto,  $font, $texto);
+            }
+        }
+
+        if (! imagepng($img, $outputPath)) {
+            imagedestroy($img);
+            throw new RuntimeException("Falha ao salvar PNG do watermark em: {$outputPath}");
+        }
+        imagedestroy($img);
     }
 
     /**

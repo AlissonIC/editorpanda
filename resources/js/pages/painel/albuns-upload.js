@@ -19,9 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('file-input');
     const btnSelect = document.getElementById('btn-select');
 
-    const queueWrap = document.getElementById('queue-wrap');
-    const queueList = document.getElementById('queue-list');
-    const videosWrap = document.getElementById('videos-wrap');
+    // Lista unificada: uploads e vídeos concluídos convivem no mesmo <ul>.
     const videosList = document.getElementById('videos-list');
     const sentinel = document.getElementById('pv-sentinel');
     const scrollArea = document.getElementById('pv-scroll');
@@ -82,10 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyView(v) {
         currentView = v === 'grid' ? 'grid' : 'list';
         safeStorage.set(VIEW_KEY, currentView);
-        [queueList, videosList].forEach((el) => {
-            el.classList.toggle('pv-view-list', currentView === 'list');
-            el.classList.toggle('pv-view-grid', currentView === 'grid');
-        });
+        videosList.classList.toggle('pv-view-list', currentView === 'list');
+        videosList.classList.toggle('pv-view-grid', currentView === 'grid');
         toggleGroup.querySelectorAll('button').forEach((b) => {
             b.classList.toggle('active', b.dataset.view === currentView);
         });
@@ -99,13 +95,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ---- Contadores ----
     function updateCounter() {
+        // Uploads ativos são os que estão no array queue (não terminados ou já
+        // removidos). "Enviados" = tudo da lista com data-id de verdade.
         const uploading = queue.filter((i) => i.status === 'uploading' || i.status === 'queued').length;
-        const done = queue.filter((i) => i.status === 'done').length;
-        const total = queue.length;
-        counter.textContent = total
-            ? (uploading > 0 ? `${done} de ${total} enviado(s) · ${uploading} em fila` : `${done} de ${total} enviado(s)`)
-            : '';
-        queueWrap.classList.toggle('d-none', total === 0);
+        const enviados = videosList.querySelectorAll('.pv-item[data-id]').length;
+        const partes = [];
+        if (enviados > 0) partes.push(`${enviados} vídeo(s)`);
+        if (uploading > 0) partes.push(`${uploading} enviando`);
+        counter.textContent = partes.join(' · ');
     }
 
     // ---- Seleção em massa ----
@@ -278,12 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const { data } = await axios.post('/painel/videos/bulk-delete', { ids });
             window.showToast(data.message || 'Removidos.', 'success');
             selectedIds.clear();
-            // Reset paginação e recarrega
-            paginaAtual = 0;
-            temMais = true;
-            videosList.innerHTML = '';
-            await carregarProximaPagina();
-            refreshStorage(false);
+            await refreshStorage(true);
         } catch (err) {
             window.showToast(err.response?.data?.message || 'Erro ao remover.', 'error');
         } finally {
@@ -292,10 +284,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ---- Renderização: fila em progresso ----
+    // ---- Card de upload (aparece no topo da lista principal) ----
+    // Estrutura reaproveita o mesmo `.pv-item` dos cards concluídos, só que
+    // com progress bar + texto de status em vez de badge normal. Assim, quando
+    // o upload finaliza, o mesmo <li> é reescrito com o card de vídeo real.
     function renderQueueItem(item) {
         const li = document.createElement('li');
-        li.className = 'pv-item';
+        li.className = 'pv-item is-queued';
+        li.dataset.status = 'enviando';
+        li.dataset.tempId = 'up-' + item.id;
         li.innerHTML = `
             <div class="pv-check-cell"></div>
             <div class="pv-thumb pv-thumb-placeholder"><i class="bi bi-film"></i></div>
@@ -308,19 +305,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="pv-progress"><div class="pv-bar" style="width: 0%"></div></div>
             </div>
+            <span class="pv-badge badge bg-warning-subtle text-warning-emphasis">Enviando</span>
             <div class="pv-actions">
                 <button type="button" class="btn btn-sm btn-outline-secondary pv-retry d-none" title="Reenviar">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-danger pv-remove" title="Remover / cancelar">
+                <button type="button" class="btn btn-sm btn-outline-danger pv-remove" title="Cancelar">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
         `;
-        queueList.appendChild(li);
+        // Limpa placeholder "Carregando…"/"Nenhum vídeo…" se ainda houver
+        videosList.querySelectorAll(':scope > li:not(.pv-item)').forEach((n) => n.remove());
+        // Insere no topo — mantém ordem "mais novo primeiro"
+        videosList.insertBefore(li, videosList.firstChild);
+
         item.li = li;
         item.bar = li.querySelector('.pv-bar');
         item.statusEl = li.querySelector('.pv-status');
+        item.badge = li.querySelector('.pv-badge');
         item.retryBtn = li.querySelector('.pv-retry');
         item.removeBtn = li.querySelector('.pv-remove');
 
@@ -373,6 +376,34 @@ document.addEventListener('DOMContentLoaded', () => {
         item.statusEl.className = `pv-status ${
             { done: 'text-success', error: 'text-danger', uploading: 'text-primary', aborting: 'text-warning' }[item.status] || 'text-muted'
         }`;
+
+        // Badge acompanha estado (bootstrap subtle)
+        if (item.badge) {
+            const badgeMap = {
+                queued:    ['warning', 'Aguardando'],
+                uploading: ['warning', 'Enviando'],
+                aborting:  ['warning', 'Cancelando'],
+                done:      ['success', 'Enviado'],
+                error:     ['danger',  'Falha'],
+            };
+            const [cor, txt] = badgeMap[item.status] || ['secondary', item.status];
+            item.badge.className = `pv-badge badge bg-${cor}-subtle text-${cor}-emphasis`;
+            item.badge.textContent = txt;
+        }
+    }
+
+    /**
+     * Converte o card de upload (mesmo <li>) num card de vídeo concluído.
+     * Reescreve o innerHTML usando `buildVideoItem` e preserva a posição.
+     */
+    function transformUploadIntoVideoCard(li, v) {
+        li.dataset.id = v.id;
+        li.dataset.status = v.status;
+        li.classList.remove('is-queued', 'is-uploading', 'is-error', 'is-aborting');
+        li.classList.add('is-done');
+        li.removeAttribute('data-temp-id');
+        // Reusa o builder — só copia o innerHTML pra não perder a posição no DOM
+        li.innerHTML = buildVideoItem(v).innerHTML;
     }
 
     // ---- Renderização: vídeos enviados ----
@@ -510,19 +541,22 @@ document.addEventListener('DOMContentLoaded', () => {
             temMais = !!data.has_more;
             totalDoAlbum = Number(data.total || 0);
 
-            // Primeira página: substitui o placeholder "Carregando…"
+            // Primeira página: limpa placeholders e cards com data-id, mas PRESERVA
+            // cards de upload em andamento (têm data-temp-id, não data-id) —
+            // senão o user perderia o progresso visual se recarregar durante upload.
             if (paginaAtual === 1) {
-                videosList.innerHTML = '';
+                videosList.querySelectorAll('.pv-item[data-id]').forEach((n) => n.remove());
+                videosList.querySelectorAll(':scope > li:not(.pv-item)').forEach((n) => n.remove());
                 renderStorage(data.armazenamento);
-                if (data.videos.length === 0) {
+                if (data.videos.length === 0 && !videosList.querySelector('.pv-item')) {
                     videosList.innerHTML = '<li class="text-muted small py-3">Nenhum vídeo neste álbum ainda.</li>';
-                    // Sem itens → para o loop de sentinel
                     temMais = false;
                     return;
                 }
             }
             data.videos.forEach(appendVideoItem);
             updateBulkBar();
+            updateCounter();
         } catch (err) {
             console.warn('[videos] erro ao carregar página', err);
         } finally {
@@ -541,7 +575,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (recarregarLista) {
             paginaAtual = 0;
             temMais = true;
-            videosList.innerHTML = '';
+            // Não faz innerHTML='' — preservamos cards de upload em andamento.
+            // O carregarProximaPagina se encarrega de limpar cards com data-id.
             await carregarProximaPagina();
         } else {
             // Só refresca o widget (usa página 1 para pegar o "armazenamento")
@@ -605,20 +640,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 else if (st === 'finalizando') item.detalhe = 'Finalizando';
                 else if (st === 'done') {
                     item.status = 'done';
-                    // Insere o card na lista de "Enviados" sem full reload.
-                    // Se o backend não devolveu o card (falha inesperada), cai
-                    // no fallback de refresh completo.
-                    if (extra?.video) {
-                        prependVideoItem(extra.video);
-                        refreshStorage(false); // só o widget de storage
+                    // Transforma o próprio <li> em card de vídeo concluído —
+                    // sem remover/inserir, sem duplicação, sem full reload.
+                    if (extra?.video && item.li) {
+                        transformUploadIntoVideoCard(item.li, extra.video);
+                        totalDoAlbum++;
+                        updateBulkBar();
+                    } else if (extra?.video) {
+                        prependVideoItem(extra.video); // fallback improvável
                     } else {
-                        refreshStorage(true);
+                        refreshStorage(true); // fallback pesado se backend não devolveu card
                     }
+                    refreshStorage(false); // widget de storage
+                    // Remove do array de fila (o item saiu do estado "upload")
                     const idx = queue.indexOf(item);
                     if (idx >= 0) queue.splice(idx, 1);
-                    item.li?.remove();
                     updateCounter();
-                    return; // paintQueueItem/updateCounter abaixo são desnecessários
+                    return;
                 }
                 else if (st === 'error') { item.status = 'error'; item.error = extra?.message || 'Erro'; }
                 else if (st === 'aborted') { item.status = 'error'; item.error = item.error || 'Cancelado'; }
@@ -913,10 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await axios.post(`/painel/videos/${id}/reprocessar`);
                 window.showToast('Vídeo enfileirado para reprocessamento.', 'success');
                 modal.hide();
-                paginaAtual = 0;
-                temMais = true;
-                videosList.innerHTML = '';
-                await carregarProximaPagina();
+                await refreshStorage(true);
             } catch (err) {
                 window.showToast(err.response?.data?.message || 'Erro ao reprocessar.', 'error');
                 b.disabled = false;
