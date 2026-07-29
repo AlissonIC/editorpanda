@@ -15,6 +15,26 @@ class Video extends Model
     public const STATUS_CONCLUIDO = 'concluido';
     public const STATUS_FALHOU = 'falhou';
 
+    private const IMAGEM_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+
+    /**
+     * Nome padronizado do arquivo — "img_123.jpg" ou "vid_123.mp4".
+     *
+     * Substitui o nome original do upload ("Abc 123.mov") pra não vazar
+     * arquivos com nome de usuário na página pública do álbum. Vídeos sempre
+     * viram mp4 (formato de entrega); imagens preservam a extensão original.
+     */
+    public static function gerarNomeArquivo(int $id, string $originalFilename): string
+    {
+        $ext = strtolower(pathinfo($originalFilename, PATHINFO_EXTENSION) ?: '');
+        $ext = preg_replace('/[^a-z0-9]/', '', $ext) ?: '';
+        $isImagem = in_array($ext, self::IMAGEM_EXTS, true);
+        $prefix = $isImagem ? 'img' : 'vid';
+        $novaExt = $isImagem ? $ext : 'mp4';
+
+        return "{$prefix}_{$id}.{$novaExt}";
+    }
+
     protected $fillable = [
         'user_id',
         'album_id',

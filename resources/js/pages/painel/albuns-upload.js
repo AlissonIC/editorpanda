@@ -8,7 +8,7 @@ const ACCEPTED = [
     'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
 ];
 const EXT_REGEX = /\.(mp4|mov|mkv|webm|jpe?g|png|webp|heic|heif)$/i;
-const MAX_BYTES = 1024 * 1024 * 1024; // 1 GB por arquivo
+const MAX_BYTES = 300 * 1024 * 1024; // 300 MB por arquivo
 const VIEW_KEY = 'panda-videos-view';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -612,7 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? ACCEPTED.includes(file.type)
                 : EXT_REGEX.test(file.name);
             if (!aceito) { window.showToast(`"${file.name}" não é aceito.`, 'warning'); return; }
-            if (file.size > MAX_BYTES) { window.showToast(`"${file.name}" excede o limite.`, 'warning'); return; }
+            if (file.size > MAX_BYTES) { window.showToast(`"${file.name}" excede o limite de 300 MB.`, 'warning'); return; }
 
             const item = { id: ++uid, file, status: 'queued', progress: 0, error: null, task: null };
             queue.push(item);

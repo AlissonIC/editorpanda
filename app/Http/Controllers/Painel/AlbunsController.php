@@ -229,15 +229,21 @@ class AlbunsController extends Controller
             $disco = Configuracao::storageDisk();
             $path = $request->file('arquivo')->store('videos/originais', $disco);
 
-            return Video::create([
+            $originalName = $request->file('arquivo')->getClientOriginalName();
+
+            $video = Video::create([
                 'user_id' => $userId,
                 'album_id' => $album->id,
-                'nome' => $request->file('arquivo')->getClientOriginalName(),
+                'nome' => $originalName, // placeholder — reescrito abaixo
                 'arquivo_original_path' => $path,
                 'disk' => $disco,
                 'status' => Video::STATUS_PENDENTE,
                 'tamanho_bytes' => $tamanho,
             ]);
+
+            $video->update(['nome' => Video::gerarNomeArquivo($video->id, $originalName)]);
+
+            return $video;
         });
 
         ProcessarVideoJob::dispatch($video->id);

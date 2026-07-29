@@ -49,7 +49,7 @@
                     <div class="dz-text">
                         <h5 class="fw-bold mb-1">Arraste vídeos ou imagens, ou clique para adicionar</h5>
                         <p class="small text-muted mb-0">
-                            Vídeo (MP4, MOV, MKV, WEBM) ou imagem (JPG, PNG, WEBP, HEIC) · envio em partes — até 1&nbsp;GB por arquivo
+                            Vídeo (MP4, MOV, MKV, WEBM) ou imagem (JPG, PNG, WEBP, HEIC) · envio em partes — até 300&nbsp;MB por arquivo
                         </p>
                     </div>
                     <button type="button" class="btn btn-dark-panda dz-btn" id="btn-select">

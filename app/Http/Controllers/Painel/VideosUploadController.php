@@ -20,7 +20,7 @@ class VideosUploadController extends Controller
     // Limites: mínimo do S3 é 5 MB por parte (exceto a última). Máx 10.000 partes.
     private const CHUNK_MIN = 5 * 1024 * 1024;         // 5 MB
     private const CHUNK_MAX = 100 * 1024 * 1024;       // 100 MB (bem acima do chunk padrão de 5MB)
-    private const FILE_MAX = 1024 * 1024 * 1024;       // 1 GB
+    private const FILE_MAX = 300 * 1024 * 1024;        // 300 MB
     private const PARTS_MAX = 10_000;
 
     private const MIMES = [
@@ -93,7 +93,7 @@ class VideosUploadController extends Controller
             $video = Video::create([
                 'user_id' => auth()->id(),
                 'album_id' => $album->id,
-                'nome' => $data['nome'],
+                'nome' => $data['nome'], // placeholder — atualizado abaixo com o ID gerado
                 'arquivo_original_path' => $key,
                 'disk' => $disco,
                 'tamanho_bytes' => $data['tamanho_bytes'],
@@ -107,6 +107,11 @@ class VideosUploadController extends Controller
                 'rotacao' => (int) ($album->rotacao_padrao ?? 0),
                 'espelhado' => (bool) ($album->espelhado_padrao ?? false),
             ]);
+
+            // Nome padronizado (img_/vid_{id}.ext) — depende do ID auto-increment,
+            // por isso vem depois do create. Evita expor nome do arquivo original
+            // do usuário na página pública do álbum.
+            $video->update(['nome' => Video::gerarNomeArquivo($video->id, $data['nome'])]);
 
             if ($disco === 's3') {
                 $s3 = app(S3MultipartService::class);
