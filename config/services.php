@@ -48,4 +48,18 @@ return [
         'texto' => env('WATERMARK_TEXTO', env('APP_NAME', 'PANDAVIDEO')),
     ],
 
+    'mercadopago' => [
+        // ACCESS_TOKEN é segredo — SÓ backend. Formato: APP_USR-... (prod) ou TEST-... (sandbox).
+        'access_token' => env('MERCADOPAGO_ACCESS_TOKEN'),
+        // PUBLIC_KEY vai pro browser (Bricks SDK). Não é segredo, mas é
+        // vinculada à conta MP, então rotate exige atualizar aqui.
+        'public_key' => env('MERCADOPAGO_PUBLIC_KEY'),
+        // PIX expira em N minutos após criação — comprador tem esse tempo pra pagar
+        // no app do banco. 30 min é o default MP; abaixo disso reduz conversão.
+        'pix_expira_minutos' => (int) env('MERCADOPAGO_PIX_EXPIRA_MIN', 30),
+        // Sandbox: mesma API, credenciais TEST-*. Se a access_token começa com TEST-,
+        // o MP roteia automaticamente pro sandbox — a flag serve pra UI (mostrar aviso).
+        'sandbox' => str_starts_with((string) env('MERCADOPAGO_ACCESS_TOKEN', ''), 'TEST-'),
+    ],
+
 ];

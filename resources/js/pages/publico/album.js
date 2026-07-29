@@ -1,4 +1,5 @@
 import { bindPhone } from '../../lib/masks';
+import { iniciar as iniciarPagamento } from '../../lib/pagamento';
 import axios from 'axios';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -6,12 +7,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!root) return;
 
     const checkoutUrl = root.dataset.checkoutUrl;
+    const videosUrl = root.dataset.videosUrl;
     const preco = parseFloat(root.dataset.preco || '0');
     const gratis = root.dataset.gratis === '1';
     // Escada de desconto [{qtd, percentual}, ...] — ordenada asc por qtd
     let descontosEscada = [];
     try { descontosEscada = JSON.parse(root.dataset.descontos || '[]') || []; } catch { descontosEscada = []; }
     descontosEscada.sort((a, b) => a.qtd - b.qtd);
+
+    // Seleção como Set (não pura DOM) — cards podem ser carregados sob demanda
+    // no infinite scroll, então checkboxes de páginas futuras não existem ainda
+    // no DOM quando o usuário seleciona um item antigo.
+    const selectedIds = new Set();
 
     const btn = document.getElementById('pv-checkout-btn');
     const selCount = document.getElementById('pv-sel-count');
@@ -35,8 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function refresh() {
-        const marcados = root.querySelectorAll('.pv-video-check:checked');
-        const qtd = marcados.length;
+        const qtd = selectedIds.size;
         const subtotal = qtd * preco;
         const pct = pctDescontoPara(qtd);
         const desconto = +(subtotal * pct / 100).toFixed(2);
@@ -52,20 +58,117 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         btn.disabled = qtd === 0;
 
-        marcados.forEach((cb) => cb.closest('.pv-video-card').classList.add('is-selected'));
-        root.querySelectorAll('.pv-video-check:not(:checked)').forEach((cb) => {
-            cb.closest('.pv-video-card').classList.remove('is-selected');
+        // Sincroniza a classe visual dos cards atualmente no DOM (novos cards
+        // que forem adicionados via infinite scroll já entram com o estado
+        // correto — ver renderCard).
+        root.querySelectorAll('.pv-video-card').forEach((card) => {
+            const id = Number(card.dataset.videoId);
+            card.classList.toggle('is-selected', selectedIds.has(id));
         });
     }
 
     root.addEventListener('change', (e) => {
-        if (e.target.matches('.pv-video-check')) refresh();
+        if (!e.target.matches('.pv-video-check')) return;
+        const id = Number(e.target.value);
+        if (e.target.checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+        refresh();
     });
     refresh();
 
-    // ==================== Preview fullscreen ====================
+    // ==================== Grid + infinite scroll ====================
     const grid = document.getElementById('pv-video-grid');
+    const sentinel = document.getElementById('pv-video-sentinel');
     const videos = JSON.parse(grid?.dataset.videos || '[]');
+    const videosTotal = Number(root.dataset.videosTotal || videos.length);
+
+    // Cursor da paginação (id do último vídeo carregado). null = não há mais páginas.
+    let proxCursor = root.dataset.proxCursor ? Number(root.dataset.proxCursor) : null;
+    let carregandoPagina = false;
+    // Fila de callbacks aguardando a próxima página — necessário quando o
+    // usuário aperta "próximo" no carrossel antes do infinite scroll ter
+    // buscado o vídeo alvo.
+    const aguardandoProxima = [];
+
+    const escapeHtml = (s) => (s || '').replace(/[&<>"']/g, (c) => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+
+    /**
+     * Monta o HTML de um card — espelha o template Blade em @foreach do album.blade.
+     * Precisa bater com a estrutura SSR pra CSS e event delegation funcionarem
+     * (mesmas classes, mesmos data-attrs). Mudanças no Blade precisam refletir aqui.
+     */
+    function renderCard(v, idx) {
+        const checked = selectedIds.has(Number(v.id)) ? 'checked' : '';
+        const selectedClass = selectedIds.has(Number(v.id)) ? ' is-selected' : '';
+        const thumbInner = v.thumbnail_url
+            ? `<img src="${escapeHtml(v.thumbnail_url)}" alt="" loading="lazy" decoding="async">`
+            : '<i class="bi bi-film"></i>';
+        return `
+            <div class="pv-video-card${selectedClass}" data-video-index="${idx}" data-video-id="${v.id}">
+                <label class="pv-video-check-wrap">
+                    <input type="checkbox" class="pv-video-check" value="${v.id}" ${checked}>
+                    <div class="pv-check-badge"><i class="bi bi-check-lg"></i></div>
+                </label>
+                <button type="button" class="pv-video-play-btn" data-video-index="${idx}" title="Pré-visualizar">
+                    <div class="pv-video-thumb">
+                        ${thumbInner}
+                        <div class="pv-play-overlay"><i class="bi bi-play-circle-fill"></i></div>
+                    </div>
+                </button>
+                <div class="pv-video-info">
+                    <div class="text-truncate small fw-medium">${escapeHtml(v.nome)}</div>
+                    <div class="small text-muted">${escapeHtml(v.duracao)}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    async function carregarProximaPagina() {
+        if (carregandoPagina || proxCursor === null || !videosUrl) return;
+        carregandoPagina = true;
+        sentinel.style.display = '';
+        try {
+            const { data } = await axios.get(videosUrl, { params: { after: proxCursor } });
+            const novos = data.videos || [];
+            if (!novos.length) {
+                proxCursor = null;
+                sentinel.style.display = 'none';
+                return;
+            }
+            const baseIdx = videos.length;
+            const html = novos.map((v, i) => renderCard(v, baseIdx + i)).join('');
+            grid.insertAdjacentHTML('beforeend', html);
+            novos.forEach((v) => videos.push(v));
+            proxCursor = data.next_cursor;
+            if (proxCursor === null) sentinel.style.display = 'none';
+        } catch (err) {
+            console.warn('[album] falha ao paginar:', err);
+            sentinel.innerHTML = '<span class="text-danger">Falha ao carregar. <button type="button" class="btn btn-link btn-sm p-0" id="pv-retry-page">Tentar de novo</button></span>';
+            sentinel.querySelector('#pv-retry-page')?.addEventListener('click', () => {
+                sentinel.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Carregando mais…';
+                carregandoPagina = false;
+                carregarProximaPagina();
+            });
+        } finally {
+            carregandoPagina = false;
+            // Desperta consumidores esperando por vídeos que só chegam depois
+            // dessa página (ex: usuário navegando rápido no carrossel).
+            while (aguardandoProxima.length) aguardandoProxima.shift()();
+        }
+    }
+
+    if (sentinel && proxCursor !== null && 'IntersectionObserver' in window) {
+        // rootMargin adianta a busca 800px antes do sentinel entrar no viewport
+        // — usuário mal percebe a chegada de cards novos ao scrollar.
+        const io = new IntersectionObserver((entries) => {
+            for (const e of entries) if (e.isIntersecting) carregarProximaPagina();
+        }, { rootMargin: '800px 0px' });
+        io.observe(sentinel);
+    }
+
+    // ==================== Preview fullscreen ====================
     const modalEl = document.getElementById('modal-video-preview');
     let modal = null;
     let indiceAtual = -1;
@@ -154,6 +257,34 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.show();
     }
 
+    // Prefetch: URLs já prewarming pra evitar re-adicionar <link> em navegação
+    // rápida entre vizinhos. GC via WeakSet não serve (URLs são strings) —
+    // Set simples segura, cap opcional futuro se virar problema.
+    const prefetched = new Set();
+
+    /**
+     * Aquece o cache HTTP pro preview de um vídeo/imagem.
+     *  - Imagem: new Image().src → decode + HTTP cache
+     *  - Vídeo: <link rel="prefetch"> → cache de baixa prioridade, não bloqueia
+     *    o preview atual. Firefox 8x mais lento pra respeitar isso que Chrome,
+     *    mas em ambos evita o "clique → esperando bytes" ao ir pro próximo.
+     */
+    function prefetchPreview(v) {
+        if (!v || !v.preview_url || prefetched.has(v.preview_url)) return;
+        prefetched.add(v.preview_url);
+        if (v.is_imagem) {
+            const img = new Image();
+            img.decoding = 'async';
+            img.src = v.preview_url;
+        } else {
+            const link = document.createElement('link');
+            link.rel = 'prefetch';
+            link.as = 'video';
+            link.href = v.preview_url;
+            document.head.appendChild(link);
+        }
+    }
+
     function setarVideo(idx) {
         if (idx < 0 || idx >= videos.length) return;
         indiceAtual = idx;
@@ -178,17 +309,42 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         titleEl.textContent = v.nome;
         nameEl.textContent = v.nome;
-        posEl.textContent = `${idx + 1} de ${videos.length}`;
+        posEl.textContent = `${idx + 1} de ${videosTotal}`;
         prevBtn.disabled = idx === 0;
-        nextBtn.disabled = idx === videos.length - 1;
+        // Baseado no TOTAL do álbum — se ainda há vídeos por paginar, next
+        // continua clicável mesmo quando idx == videos.length-1 (o próximo
+        // será buscado on-demand no clique).
+        nextBtn.disabled = idx >= videosTotal - 1;
         atualizarToggleBtn();
+
+        // Prefetch os dois próximos e o anterior imediato — sliding window
+        // pra que Prev/Next/setinhas do teclado tenham resposta instantânea.
+        prefetchPreview(videos[idx + 1]);
+        prefetchPreview(videos[idx + 2]);
+        prefetchPreview(videos[idx - 1]);
+
+        // Se o usuário está chegando perto do fim da lista carregada, dispara
+        // a próxima página do infinite scroll — carrossel não pode ficar preso
+        // em N/500 quando o restante ainda não foi buscado.
+        if (idx >= videos.length - 3) carregarProximaPagina();
+    }
+
+    /**
+     * Navega pro índice N. Se o vídeo ainda não foi paginado, aguarda a
+     * próxima página antes de renderizar (mostra o loading no lugar do vídeo).
+     */
+    function irPara(idx) {
+        if (idx < 0 || idx >= videosTotal) return;
+        if (idx < videos.length) return setarVideo(idx);
+        // Ainda não carregado — dispara pagination e enfileira o callback
+        aguardandoProxima.push(() => irPara(idx));
+        carregarProximaPagina();
     }
 
     function atualizarToggleBtn() {
         if (indiceAtual < 0) return;
         const v = videos[indiceAtual];
-        const cb = root.querySelector(`.pv-video-check[value="${v.id}"]`);
-        const marcado = cb?.checked;
+        const marcado = selectedIds.has(Number(v.id));
         if (marcado) {
             toggleBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Adicionado — remover';
             toggleBtn.classList.remove('btn-outline-light');
@@ -201,42 +357,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function atualizarContadorModal() {
-        const marcados = root.querySelectorAll('.pv-video-check:checked');
-        countEl.textContent = marcados.length;
-        if (totalPlayerEl) totalPlayerEl.textContent = brl(marcados.length * preco);
-        checkoutBtn.disabled = marcados.length === 0;
+        const qtd = selectedIds.size;
+        countEl.textContent = qtd;
+        if (totalPlayerEl) totalPlayerEl.textContent = brl(qtd * preco);
+        checkoutBtn.disabled = qtd === 0;
     }
 
-    // Toggle seleção no player (afeta o checkbox real do grid)
+    // Toggle seleção no player. Atualiza o Set + espelha no checkbox do grid
+    // (via 'change' o handler central já sincroniza o Set — dispatchamos change
+    // pra que refresh() rode e a classe visual do card fique consistente).
     toggleBtn?.addEventListener('click', () => {
         if (indiceAtual < 0) return;
         const v = videos[indiceAtual];
         const cb = root.querySelector(`.pv-video-check[value="${v.id}"]`);
-        if (!cb) return;
-        cb.checked = !cb.checked;
-        cb.dispatchEvent(new Event('change', { bubbles: true }));
+        if (cb) {
+            cb.checked = !cb.checked;
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+            // Card ainda não está no DOM (paginação): mexe direto no Set.
+            if (selectedIds.has(Number(v.id))) selectedIds.delete(Number(v.id));
+            else selectedIds.add(Number(v.id));
+            refresh();
+        }
         atualizarToggleBtn();
         atualizarContadorModal();
     });
 
-    prevBtn?.addEventListener('click', () => setarVideo(indiceAtual - 1));
-    nextBtn?.addEventListener('click', () => setarVideo(indiceAtual + 1));
+    prevBtn?.addEventListener('click', () => irPara(indiceAtual - 1));
+    nextBtn?.addEventListener('click', () => irPara(indiceAtual + 1));
 
     // Teclado: ←/→ navega, espaço play/pause, esc fecha (bootstrap já faz)
     modalEl?.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowLeft' && !prevBtn.disabled) setarVideo(indiceAtual - 1);
-        if (e.key === 'ArrowRight' && !nextBtn.disabled) setarVideo(indiceAtual + 1);
+        if (e.key === 'ArrowLeft' && !prevBtn.disabled) irPara(indiceAtual - 1);
+        if (e.key === 'ArrowRight' && !nextBtn.disabled) irPara(indiceAtual + 1);
         if (e.key === ' ') {
             e.preventDefault();
             videoEl.paused ? videoEl.play() : videoEl.pause();
         }
     });
 
-    // Ir pro checkout: fecha modal e leva foco pro form
+    // Ir pro checkout: fecha modal e leva foco pro primeiro campo VAZIO
+    // (respeita valores já preenchidos, ex: comprador voltou e reabriu o form).
     checkoutBtn?.addEventListener('click', () => {
         modal.hide();
         document.getElementById('pv-checkout-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => document.querySelector('#pv-checkout-form [name=nome]')?.focus(), 500);
+        setTimeout(() => {
+            const campos = ['nome', 'email', 'whatsapp', 'codigo_cupom'];
+            const primeiroVazio = campos.map((n) => form.querySelector(`[name=${n}]`)).find((el) => el && !el.value.trim());
+            (primeiroVazio || form.querySelector('[name=nome]'))?.focus();
+        }, 500);
     });
 
     // Pausa video ao fechar (evita som continuar rolando)
@@ -253,18 +422,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Validação inline: exibe .invalid-feedback ao vivo em vez de esperar o submit
+    ['nome', 'email'].forEach((n) => {
+        const el = form.querySelector(`[name=${n}]`);
+        el?.addEventListener('blur', () => el.classList.toggle('is-invalid', !el.checkValidity()));
+        el?.addEventListener('input', () => el.classList.remove('is-invalid'));
+    });
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        // Validação nativa antes de disparar o request — evita ida-e-volta ao servidor.
+        if (!form.checkValidity()) {
+            form.querySelectorAll(':invalid').forEach((el) => el.classList.add('is-invalid'));
+            form.querySelector(':invalid')?.focus();
+            return;
+        }
         btn.disabled = true;
         const original = btn.textContent;
         btn.textContent = gratis ? 'Enviando…' : 'Processando…';
 
-        const ids = [...root.querySelectorAll('.pv-video-check:checked')].map((c) => Number(c.value));
         const payload = {
             nome: form.nome.value.trim(),
             email: form.email.value.trim(),
             whatsapp: form.whatsapp.value.trim() || null,
-            video_ids: ids,
+            video_ids: [...selectedIds],
             codigo_cupom: form.codigo_cupom?.value.trim().toUpperCase() || null,
         };
 
@@ -278,7 +459,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => window.location.reload(), 1500);
                 return;
             }
-            window.location.href = data.redirect;
+            // Fluxo pago: abre modal de pagamento (MP Bricks + PIX). O redirect
+            // pra /pedido/{id} acontece SÓ após o MP aprovar (via polling).
+            await iniciarPagamento({
+                pedidoId: data.pedido_id,
+                publicKey: data.public_key,
+                total: data.total,
+            });
+            btn.textContent = original; // permite retry se o modal for fechado
+            btn.disabled = false;
         } catch (err) {
             const msg = err.response?.data?.message
                 || Object.values(err.response?.data?.errors || {})[0]?.[0]

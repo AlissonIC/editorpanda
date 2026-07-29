@@ -8,6 +8,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Pedido extends Model
 {
+    // Fluxo do pedido pago:
+    //   AGUARDANDO_PAGAMENTO → PAGO (via polling do MP)
+    //                       → CANCELADO (usuário desistiu / expirou / MP rejeitou)
+    // Grátis pula direto pra PAGO (não usa gateway).
+    public const STATUS_AGUARDANDO_PAGAMENTO = 'aguardando_pagamento';
+    public const STATUS_PAGO = 'pago';
+    public const STATUS_CANCELADO = 'cancelado';
+
     protected $fillable = [
         'album_id',
         'user_id',
@@ -21,6 +29,12 @@ class Pedido extends Model
         'desconto_quantidade',
         'status',
         'gateway_id',
+        'gateway_status',
+        'payment_method',
+        'pix_qr_code',
+        'pix_qr_code_base64',
+        'pix_expires_at',
+        'gateway_metadata',
         'pago_em',
     ];
 
@@ -30,8 +44,15 @@ class Pedido extends Model
             'total' => 'decimal:2',
             'desconto_cupom' => 'decimal:2',
             'desconto_quantidade' => 'decimal:2',
+            'pix_expires_at' => 'datetime',
+            'gateway_metadata' => 'array',
             'pago_em' => 'datetime',
         ];
+    }
+
+    public function pagamentoLogs(): HasMany
+    {
+        return $this->hasMany(LogPagamento::class);
     }
 
     public function album(): BelongsTo

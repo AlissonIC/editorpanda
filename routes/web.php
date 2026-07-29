@@ -22,6 +22,11 @@ Route::name('publico.')->group(function () {
     Route::get('/e/{evento:slug}/capa', [Publico\EventoPublicoController::class, 'servirCapa'])->name('evento.capa');
     Route::get('/e/{evento:slug}/logo', [Publico\EventoPublicoController::class, 'servirLogo'])->name('evento.logo');
     Route::get('/a/{album:slug}', [Publico\AlbumPublicoController::class, 'show'])->name('album.show');
+    // Paginação dos vídeos do álbum público — infinite scroll na grid pra não
+    // renderizar 500 cards de cara em álbuns grandes.
+    Route::get('/a/{album:slug}/videos', [Publico\AlbumPublicoController::class, 'listarVideos'])
+        ->middleware('throttle:120,1')
+        ->name('album.videos');
     // Thumbnails de vídeos em álbuns públicos — sem autenticação
     Route::get('/v/{video}/thumb', [Publico\AlbumPublicoController::class, 'servirThumbnail'])->name('video.thumb');
     Route::get('/v/{video}/preview', [Publico\AlbumPublicoController::class, 'servirPreview'])
@@ -31,6 +36,27 @@ Route::name('publico.')->group(function () {
         ->middleware('throttle:10,1')
         ->name('checkout.store');
     Route::get('/pedido/{pedido}', [Publico\CheckoutController::class, 'confirmacao'])->name('checkout.confirmacao');
+    // Download por item do pedido — URL assinada (2h), não exige login. Usada
+    // no /pedido/{id} pra que o comprador baixe direto após checkout, sem
+    // esperar clicar no magic link de e-mail e virar sessão.
+    Route::get('/pedido/{pedido}/baixar/{video}', [Publico\CheckoutController::class, 'baixarItemPedido'])
+        ->middleware(['signed', 'throttle:30,1'])
+        ->name('pedido.baixar-item');
+
+    // ---- Fluxo de pagamento MP transparente (sem webhook — polling) ----
+    // Todas as rotas usam throttle: PIX/cartão criam pagamento (custoso pro MP),
+    // status é polling puro (12/min = 1 chamada a cada 5s por pedido).
+    Route::post('/pedido/{pedido}/pagamento/pix', [Publico\PagamentoController::class, 'criarPix'])
+        ->middleware('throttle:6,1')
+        ->name('pagamento.pix');
+    Route::post('/pedido/{pedido}/pagamento/cartao', [Publico\PagamentoController::class, 'pagarCartao'])
+        ->middleware('throttle:10,1')
+        ->name('pagamento.cartao');
+    Route::get('/pedido/{pedido}/pagamento/status', [Publico\PagamentoController::class, 'status'])
+        ->middleware('throttle:60,1')
+        ->name('pagamento.status');
+    Route::get('/pedido/{pedido}/pagamento/retorno', [Publico\PagamentoController::class, 'retorno'])
+        ->name('pagamento.retorno');
     // Download livre p/ eventos gratuitos — URL assinada enviada por email
     Route::get('/v/{video}/gratis', [Publico\CheckoutController::class, 'baixarGratis'])
         ->middleware(['signed', 'throttle:30,1'])

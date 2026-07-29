@@ -5,11 +5,17 @@ namespace App\Http\Controllers\Publico;
 use App\Http\Controllers\Controller;
 use App\Models\Album;
 use App\Models\Video;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class AlbumPublicoController extends Controller
 {
+    // Página inicial (SSR) e cada chunk de paginação carregam este tamanho.
+    // 24 = múltiplo de 2/3/4/6 → grid fica cheia em qualquer breakpoint.
+    private const PAGE_SIZE = 24;
+
     public function show(Album $album): View
     {
         // Carregamos os campos que o partial hero-evento precisa (capa, logo,
@@ -18,33 +24,75 @@ class AlbumPublicoController extends Controller
         abort_unless($album->status === 'publicado', 404);
         abort_unless($album->evento?->status === 'ativo', 404);
 
-        // Só mostra vídeos ENTREGÁVEIS (concluídos). Vender vídeos processando
-        // era risco: se o processamento falhasse, o comprador pagava por nada.
-        $videos = $album->videos()
-            ->where('status', 'concluido')
+        $baseQuery = $album->videos()->where('status', 'concluido');
+        $total = (clone $baseQuery)->count();
+
+        // SSR carrega só a primeira página; o restante é infinite scroll.
+        // Isso evita renderizar 500 cards em álbuns grandes (HTML enorme,
+        // paint travado, dezenas de MB de thumbnails baixadas de cara).
+        $videosDb = $baseQuery
             ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path'])
             ->orderBy('id')
-            ->get()
-            ->map(fn ($v) => [
-                'id' => $v->id,
-                'nome' => $v->nome,
-                'status' => $v->status,
-                'processado' => true,
-                // is_imagem baseado na EXTENSÃO REAL do arquivo de preview,
-                // não no nome — legados (imagens processadas como mp4 antes) devem
-                // continuar rodando como vídeo até serem reprocessados.
-                'is_imagem' => str_ends_with(strtolower((string) $v->arquivo_preview_path), '.jpg')
-                            || str_ends_with(strtolower((string) $v->arquivo_preview_path), '.jpeg'),
-                'duracao' => $this->formatDuration((int) $v->duracao_segundos),
-                'thumbnail_url' => $v->thumbnail_path ? route('publico.video.thumb', $v->id) : null,
-                'preview_url' => route('publico.video.preview', $v->id),
-            ]);
+            ->limit(self::PAGE_SIZE)
+            ->get();
+
+        $videos = $videosDb->map(fn ($v) => $this->mapVideoParaCard($v));
+        $proxCursor = $videosDb->count() < self::PAGE_SIZE ? null : (int) $videosDb->last()->id;
 
         return view('pages.publico.album', [
             'album' => $album,
             'videos' => $videos,
             'preco' => $album->precoEfetivoPorVideo(),
+            'videosTotal' => $total,
+            'proxCursor' => $proxCursor,
         ]);
+    }
+
+    /**
+     * Endpoint JSON de paginação — retorna a próxima página de vídeos.
+     * Cursor-based (por ID) — mais eficiente que offset em álbuns grandes
+     * e imune a duplicações/gaps se novos vídeos forem publicados durante
+     * a navegação do cliente.
+     */
+    public function listarVideos(Album $album, Request $request): JsonResponse
+    {
+        abort_unless($album->status === 'publicado', 404);
+        $album->loadMissing('evento:id,status');
+        abort_unless($album->evento?->status === 'ativo', 404);
+
+        $after = (int) $request->query('after', 0);
+        $limit = min((int) $request->query('limit', self::PAGE_SIZE), 100);
+
+        $videosDb = $album->videos()
+            ->where('status', 'concluido')
+            ->when($after > 0, fn ($q) => $q->where('id', '>', $after))
+            ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path'])
+            ->orderBy('id')
+            ->limit($limit)
+            ->get();
+
+        return response()->json([
+            'videos' => $videosDb->map(fn ($v) => $this->mapVideoParaCard($v))->values(),
+            'next_cursor' => $videosDb->count() < $limit ? null : (int) $videosDb->last()->id,
+        ]);
+    }
+
+    private function mapVideoParaCard(Video $v): array
+    {
+        return [
+            'id' => $v->id,
+            'nome' => $v->nome,
+            'status' => $v->status,
+            'processado' => true,
+            // is_imagem baseado na EXTENSÃO REAL do arquivo de preview,
+            // não no nome — legados (imagens processadas como mp4 antes) devem
+            // continuar rodando como vídeo até serem reprocessados.
+            'is_imagem' => str_ends_with(strtolower((string) $v->arquivo_preview_path), '.jpg')
+                        || str_ends_with(strtolower((string) $v->arquivo_preview_path), '.jpeg'),
+            'duracao' => $this->formatDuration((int) $v->duracao_segundos),
+            'thumbnail_url' => $v->thumbnail_path ? route('publico.video.thumb', $v->id) : null,
+            'preview_url' => route('publico.video.preview', $v->id),
+        ];
     }
 
     /**

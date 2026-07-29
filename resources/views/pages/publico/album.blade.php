@@ -23,15 +23,18 @@
         id="album-app"
         class="row g-4"
         data-checkout-url="{{ route('publico.checkout.store', $album->slug) }}"
+        data-videos-url="{{ route('publico.album.videos', $album->slug) }}"
         data-preco="{{ $preco }}"
         data-gratis="{{ $gratis ? '1' : '0' }}"
         data-descontos="{{ json_encode($descontos) }}"
+        data-videos-total="{{ $videosTotal }}"
+        data-prox-cursor="{{ $proxCursor ?? '' }}"
     >
         <div class="col-lg-8">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h4 class="fw-bold mb-0">Vídeos</h4>
                 <div class="small text-muted">
-                    {{ count($videos) }} vídeos ·
+                    {{ $videosTotal }} vídeos ·
                     @if($gratis)
                         <span class="text-success fw-semibold">Grátis</span>
                     @else
@@ -40,7 +43,7 @@
                 </div>
             </div>
 
-            @if(count($videos) === 0)
+            @if($videosTotal === 0)
                 <div class="pv-empty">
                     <i class="bi bi-film"></i>
                     <p>Nenhum vídeo neste álbum ainda.</p>
@@ -48,7 +51,7 @@
             @else
                 <div class="pv-video-grid" id="pv-video-grid" data-videos="{{ json_encode($videos) }}">
                     @foreach($videos as $i => $v)
-                        <div class="pv-video-card" data-video-index="{{ $i }}">
+                        <div class="pv-video-card" data-video-index="{{ $i }}" data-video-id="{{ $v['id'] }}">
                             <label class="pv-video-check-wrap">
                                 <input type="checkbox" class="pv-video-check" value="{{ $v['id'] }}">
                                 <div class="pv-check-badge"><i class="bi bi-check-lg"></i></div>
@@ -57,7 +60,7 @@
                                     title="Pré-visualizar">
                                 <div class="pv-video-thumb">
                                     @if($v['thumbnail_url'])
-                                        <img src="{{ $v['thumbnail_url'] }}" alt="" loading="lazy">
+                                        <img src="{{ $v['thumbnail_url'] }}" alt="" loading="lazy" decoding="async">
                                     @else
                                         <i class="bi bi-film"></i>
                                     @endif
@@ -70,6 +73,11 @@
                             </div>
                         </div>
                     @endforeach
+                </div>
+                {{-- Sentinel do infinite scroll: quando esta div aparece no viewport,
+                     o JS busca a próxima página via /a/{slug}/videos?after=<cursor>. --}}
+                <div id="pv-video-sentinel" class="text-center text-muted small py-3" style="display:none;">
+                    <i class="bi bi-arrow-clockwise"></i> Carregando mais…
                 </div>
 
                 {{-- Modal de preview fullscreen --}}
@@ -198,27 +206,49 @@
                     @endif
                 </div>
 
-                <form id="pv-checkout-form" novalidate>
+                <form id="pv-checkout-form" novalidate autocomplete="on">
                     @csrf
                     <div class="mb-2">
-                        <label class="form-label small">Seu nome</label>
-                        <input type="text" name="nome" class="form-control" required>
+                        <label class="form-label small" for="pv-form-nome">Seu nome</label>
+                        <input type="text" name="nome" id="pv-form-nome"
+                               class="form-control"
+                               autocomplete="name"
+                               autocapitalize="words"
+                               spellcheck="false"
+                               required minlength="2" maxlength="120">
+                        <div class="invalid-feedback">Informe seu nome.</div>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label small">E-mail</label>
-                        <input type="email" name="email" class="form-control" required>
+                        <label class="form-label small" for="pv-form-email">E-mail</label>
+                        <input type="email" name="email" id="pv-form-email"
+                               class="form-control"
+                               autocomplete="email"
+                               inputmode="email"
+                               autocapitalize="off"
+                               spellcheck="false"
+                               required maxlength="180">
+                        <div class="invalid-feedback">Informe um e-mail válido.</div>
                         <small class="text-muted">
                             {{ $gratis ? 'Enviaremos os vídeos para este e-mail.' : 'Os vídeos serão enviados para este e-mail.' }}
                         </small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label small">WhatsApp (opcional)</label>
-                        <input type="text" name="whatsapp" class="form-control" placeholder="(11) 99999-9999">
+                        <label class="form-label small" for="pv-form-whats">WhatsApp <span class="text-muted">(opcional)</span></label>
+                        <input type="tel" name="whatsapp" id="pv-form-whats"
+                               class="form-control"
+                               autocomplete="tel-national"
+                               inputmode="tel"
+                               placeholder="(11) 99999-9999"
+                               maxlength="20">
                     </div>
                     @if(! $gratis)
                         <div class="mb-3">
-                            <label class="form-label small">Cupom de desconto (opcional)</label>
-                            <input type="text" name="codigo_cupom" class="form-control text-uppercase"
+                            <label class="form-label small" for="pv-form-cupom">Cupom de desconto <span class="text-muted">(opcional)</span></label>
+                            <input type="text" name="codigo_cupom" id="pv-form-cupom"
+                                   class="form-control text-uppercase"
+                                   autocapitalize="characters"
+                                   autocomplete="off"
+                                   spellcheck="false"
                                    placeholder="Digite o código" maxlength="60">
                             <small class="text-muted">Aplicado na finalização se válido.</small>
                         </div>
@@ -234,6 +264,74 @@
         </div>
     </div>
 </section>
+
+@unless($gratis)
+    {{-- Modal de PAGAMENTO — abre após submit do checkout. Duas abas: PIX e Cartão.
+         O JS decide qual mostrar por padrão, aciona o MP Bricks, faz polling de status,
+         e redireciona pra /pedido/{id} quando aprovado. --}}
+    <div class="modal fade" id="modal-pagamento" tabindex="-1" aria-hidden="true"
+         data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Pagamento — <span id="pv-pag-total">R$ 0,00</span></h5>
+                    <button type="button" class="btn-close" id="pv-pag-close" title="Cancelar"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-pills mb-3 justify-content-center" id="pv-pag-tabs" role="tablist">
+                        <li class="nav-item">
+                            <button type="button" class="nav-link active" data-tab="pix">
+                                <i class="bi bi-qr-code me-1"></i>PIX
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button type="button" class="nav-link" data-tab="cartao">
+                                <i class="bi bi-credit-card me-1"></i>Cartão de crédito
+                            </button>
+                        </li>
+                    </ul>
+
+                    {{-- Aba PIX --}}
+                    <div id="pv-pag-pix" class="pv-pag-tab-content">
+                        <div id="pv-pag-pix-loading" class="text-center py-4">
+                            <div class="spinner-border text-dark" role="status"></div>
+                            <div class="small text-muted mt-2">Gerando QR Code…</div>
+                        </div>
+                        <div id="pv-pag-pix-content" style="display:none;">
+                            <div class="text-center mb-3">
+                                <img id="pv-pag-pix-qr" alt="QR Code PIX"
+                                     style="max-width:220px; border:1px solid #eee; padding:8px; border-radius:.5rem;">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">Copia e cola</label>
+                                <div class="input-group">
+                                    <input type="text" id="pv-pag-pix-codigo" class="form-control font-monospace small" readonly>
+                                    <button type="button" class="btn btn-outline-secondary" id="pv-pag-pix-copiar">
+                                        <i class="bi bi-clipboard"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="alert alert-info small mb-0 mt-3">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Abra o app do seu banco, escolha PIX e cole o código
+                                (ou escaneie o QR). A confirmação é automática — pode
+                                deixar esta aba aberta. <span id="pv-pag-pix-timer" class="fw-semibold"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Aba Cartão --}}
+                    <div id="pv-pag-cartao" class="pv-pag-tab-content" style="display:none;">
+                        <div id="cardPaymentBrick_container"></div>
+                    </div>
+
+                    {{-- Estado global (aguardando / aprovado / rejeitado) --}}
+                    <div id="pv-pag-status" class="alert d-none mt-3" role="status"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+@endunless
 @endsection
 
 @push('scripts')

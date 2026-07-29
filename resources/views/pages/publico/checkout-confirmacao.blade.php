@@ -37,15 +37,19 @@
                         </div>
                         <div class="pv-video-info">
                             <div class="text-truncate small fw-medium">{{ $v->nome }}</div>
-                            @auth('comprador')
-                                @if($v->status === 'concluido')
-                                    <a href="{{ route('publico.videos.baixar', $v->id) }}" class="btn btn-sm btn-dark w-100 mt-2">
-                                        <i class="bi bi-download me-1"></i>Baixar
-                                    </a>
-                                @else
-                                    <div class="small text-muted mt-2">Aguardando processamento</div>
-                                @endif
-                            @endauth
+                            @if($v->status !== 'concluido')
+                                <div class="small text-muted mt-2">Aguardando processamento</div>
+                            @elseif(isset($downloadUrls[$v->id]))
+                                {{-- URL assinada de 2h — funciona sem estar logado, gerada no controller
+                                     só quando o acesso à página é legítimo (signed OU comprador logado). --}}
+                                <a href="{{ $downloadUrls[$v->id] }}" class="btn btn-sm btn-dark w-100 mt-2">
+                                    <i class="bi bi-download me-1"></i>Baixar
+                                </a>
+                            @elseif(auth('comprador')->check())
+                                <a href="{{ route('publico.videos.baixar', $v->id) }}" class="btn btn-sm btn-dark w-100 mt-2">
+                                    <i class="bi bi-download me-1"></i>Baixar
+                                </a>
+                            @endif
                         </div>
                     </div>
                 </div>

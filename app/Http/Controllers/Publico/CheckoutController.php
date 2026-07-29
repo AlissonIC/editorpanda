@@ -124,8 +124,9 @@ class CheckoutController extends Controller
             if ($updates) $comprador->update($updates);
 
             // Grátis → 'pago' direto sem gateway (não há o que cobrar).
-            // Pago  → 'pago' também (MVP; quando integrar gateway, muda pra 'pendente' e libera após webhook).
-            // A diferenciação fica registrada em `total` (0.00 vs >0) e no ehGratis pra auditoria.
+            // Pago  → 'aguardando_pagamento' — o front chama /pedido/{id}/pagamento/{pix|cartao}
+            //        pra criar o payment no MP, e polla status até aprovar/rejeitar.
+            $statusInicial = $ehGratis ? Pedido::STATUS_PAGO : Pedido::STATUS_AGUARDANDO_PAGAMENTO;
             $pedido = Pedido::create([
                 'album_id' => $album->id,
                 'user_id' => $album->user_id,
@@ -137,8 +138,8 @@ class CheckoutController extends Controller
                 'cupom_id' => $cupom?->id,
                 'desconto_cupom' => $descontoCupom > 0 ? $descontoCupom : null,
                 'desconto_quantidade' => $descontoQtd > 0 ? $descontoQtd : null,
-                'status' => 'pago',
-                'pago_em' => now(),
+                'status' => $statusInicial,
+                'pago_em' => $ehGratis ? now() : null,
                 'gateway_id' => $ehGratis ? 'gratis' : null, // marca origem gratuita p/ relatórios
             ]);
 
@@ -155,22 +156,9 @@ class CheckoutController extends Controller
                 ]);
             }
 
-            // Credita saldo apenas se houve receita real (total > 0).
-            // Grátis não credita nada. Taxa do plano do vendedor é descontada
-            // aqui — a diferença fica pra plataforma (não gravada em tabela ainda,
-            // mas o total do pedido registra a receita bruta pra relatórios).
-            if ($total > 0) {
-                $vendedor = User::whereKey($album->user_id)->lockForUpdate()->with('plano')->first();
-                $taxa = (float) ($vendedor?->plano?->taxa_por_venda ?? 0);
-                $credito = round($total * (1 - $taxa / 100), 2);
-                $creditoCents = (int) round($credito * 100);
-                if ($creditoCents > 0) {
-                    DB::table('users')->where('id', $vendedor->id)->update([
-                        'saldo_disponivel' => DB::raw("saldo_disponivel + ({$creditoCents} / 100)"),
-                    ]);
-                }
-            }
-
+            // Crédito ao vendedor: SÓ ao confirmar pagamento (não aqui, pois
+            // o pedido acabou de nascer como 'aguardando_pagamento' pra fluxo
+            // pago). Grátis não gera crédito. Ver PagamentoController::creditarVendedor.
             return $pedido;
         });
 
@@ -200,30 +188,15 @@ class CheckoutController extends Controller
             ]);
         }
 
-        // Magic link automático pós-compra (fluxo pago)
-        [$tokenPlano] = \App\Models\AcessoToken::gerarPara(
-            $pedido->comprador_email,
-            $request->ip(),
-            $request->userAgent(),
-        );
-        $urlAcesso = route('publico.acesso.validar', ['token' => $tokenPlano]);
-
-        try {
-            $pedido->comprador?->notify(new CompraFinalizadaNotification($pedido, $urlAcesso));
-        } catch (\Throwable $e) {
-            \Log::warning('Falha ao enviar email de compra', ['pedido' => $pedido->id, 'erro' => $e->getMessage()]);
-        }
-
-        // URL de confirmação temporariamente ASSINADA (30 min) — impede que copiar+compartilhar exponha o pedido
-        $redirectUrl = URL::temporarySignedRoute(
-            'publico.checkout.confirmacao',
-            now()->addMinutes(30),
-            ['pedido' => $pedido->id],
-        );
-
+        // Fluxo pago: NÃO redireciona pra confirmação — o front vai renderizar
+        // a UI de pagamento (Bricks cartão + PIX QR) inline. Só depois de
+        // aprovado é que o redirect pra /pedido/{id} rola (via retorno).
+        // Devolve pedido_id + total + public_key + expiração — front cuida do resto.
         return response()->json([
             'pedido_id' => $pedido->id,
-            'redirect' => $redirectUrl,
+            'total' => (float) $pedido->total,
+            'public_key' => config('services.mercadopago.public_key'),
+            'sandbox' => (bool) config('services.mercadopago.sandbox'),
         ]);
     }
 
@@ -270,8 +243,57 @@ class CheckoutController extends Controller
         abort_unless($viaAssinatura || $viaLogin, 403,
             'Faça login pelo link enviado por e-mail para ver este pedido.');
 
+        // URLs de download assinadas de curta duração — geradas SÓ quando o
+        // acesso é legítimo. A view usa em vez de exigir @auth('comprador'),
+        // que quebrava o fluxo recém-checkout (URL assinada mas usuário não
+        // autenticado ainda). Válidas por 2h — tempo suficiente pra baixar
+        // todos, e pequeno o bastante pra não virar link permanente.
+        $downloadUrls = [];
+        if ($pedido->status === 'pago') {
+            foreach ($pedido->itens as $item) {
+                if ($item->video?->status !== 'concluido') continue;
+                $downloadUrls[$item->video_id] = URL::temporarySignedRoute(
+                    'publico.pedido.baixar-item',
+                    now()->addHours(2),
+                    ['pedido' => $pedido->id, 'video' => $item->video_id],
+                );
+            }
+        }
+
         return view('pages.publico.checkout-confirmacao', [
             'pedido' => $pedido,
+            'downloadUrls' => $downloadUrls,
         ]);
+    }
+
+    /**
+     * Download de item comprado — via URL assinada pontual (não exige login).
+     * Segurança: URL assinada (integridade), item PRECISA pertencer ao pedido,
+     * pedido PRECISA estar pago. O signed middleware valida integridade+expiração.
+     */
+    public function baixarItemPedido(Pedido $pedido, Video $video)
+    {
+        abort_unless($pedido->status === 'pago', 404);
+        abort_unless($video->status === 'concluido', 404);
+
+        $pertence = $pedido->itens()->where('video_id', $video->id)->exists();
+        abort_unless($pertence, 404);
+
+        $disk = $video->disk ?: 'local';
+        $path = $video->arquivo_processado_path;
+        abort_unless($path, 404);
+        $nome = $video->nomeArquivoDownload('processado');
+
+        if ($disk === 's3') {
+            try {
+                $url = Storage::disk('s3')->temporaryUrl($path, now()->addMinutes(15), [
+                    'ResponseContentDisposition' => 'attachment; filename="' . $nome . '"',
+                ]);
+                return redirect()->away($url);
+            } catch (\Throwable) {
+                abort(500);
+            }
+        }
+        return Storage::disk('local')->download($path, $nome);
     }
 }

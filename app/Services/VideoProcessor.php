@@ -137,17 +137,59 @@ class VideoProcessor
 
             // 9) Atualiza registro
             $duracao = $isImagem ? 0 : (int) round($meta['duration'] ?? 0);
-            $video->update([
+            $update = [
                 'arquivo_processado_path' => $processedRel,
                 'arquivo_preview_path' => $previewRel,
                 'status' => Video::STATUS_CONCLUIDO,
                 'processado_em' => now(),
                 'duracao_segundos' => $duracao,
                 'erro_msg' => null,
-            ]);
+            ];
+
+            // 10) Thumbnail — fallback server-side quando o browser não conseguiu
+            // gerar (típico com HEIC: browsers não decodificam, extractImageThumbnail
+            // falha, thumbnail_path fica NULL). Refetch pra pegar update do browser
+            // que pode ter chegado entre o dispatch e agora.
+            $video->refresh();
+            if (empty($video->thumbnail_path)) {
+                $thumbLocal = $tempDir . DIRECTORY_SEPARATOR . 'thumb.jpg';
+                $thumbSource = $outputPath; // processed (mp4 ou jpg — ffmpeg lida com ambos)
+                $this->buildThumbnail($thumbSource, $thumbLocal, $isImagem, $meta['duration'] ?? 0);
+                $thumbRel = "thumbnails/{$video->user_id}/video-{$video->id}.jpg";
+                $this->uploadToDisk($video->disk ?: 'local', $thumbLocal, $thumbRel);
+                $update['thumbnail_path'] = $thumbRel;
+            }
+
+            $video->update($update);
         } finally {
             $this->rmrf($tempDir);
         }
+    }
+
+    /**
+     * Gera thumbnail 150x150 JPEG (cover-crop centralizado). Fallback server-side
+     * pra quando o browser não conseguiu (ex: HEIC — nenhum browser desktop decodifica).
+     */
+    private function buildThumbnail(string $source, string $output, bool $isImagem, float $duration): void
+    {
+        $seekArgs = [];
+        if (! $isImagem && $duration > 0) {
+            // Vídeo: pega frame em ~10% da duração (mesmo comportamento do JS)
+            $seek = max(0.05, min($duration * 0.1, $duration - 0.1));
+            $seekArgs = ['-ss', sprintf('%.2f', $seek)];
+        }
+
+        $cmd = [
+            $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
+            ...$seekArgs,
+            '-i', $source,
+            '-vf', 'scale=150:150:force_original_aspect_ratio=increase,crop=150:150',
+            '-frames:v', '1',
+            '-q:v', '4',
+            '-threads', '1',
+            $output,
+        ];
+        $this->runFFmpeg($cmd);
     }
 
     /**

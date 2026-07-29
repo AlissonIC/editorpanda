@@ -21,8 +21,10 @@ class Video extends Model
      * Nome padronizado do arquivo — "img_123.jpg" ou "vid_123.mp4".
      *
      * Substitui o nome original do upload ("Abc 123.mov") pra não vazar
-     * arquivos com nome de usuário na página pública do álbum. Vídeos sempre
-     * viram mp4 (formato de entrega); imagens preservam a extensão original.
+     * arquivos com nome de usuário na página pública do álbum. O pipeline
+     * sempre entrega vídeos como mp4 e imagens como jpg (VideoProcessor
+     * roda ffmpeg com libx264/mjpeg), então o nome espelha o formato final
+     * — mesmo pra HEIC/PNG/WEBP, o cliente baixa um .jpg.
      */
     public static function gerarNomeArquivo(int $id, string $originalFilename): string
     {
@@ -30,7 +32,7 @@ class Video extends Model
         $ext = preg_replace('/[^a-z0-9]/', '', $ext) ?: '';
         $isImagem = in_array($ext, self::IMAGEM_EXTS, true);
         $prefix = $isImagem ? 'img' : 'vid';
-        $novaExt = $isImagem ? $ext : 'mp4';
+        $novaExt = $isImagem ? 'jpg' : 'mp4';
 
         return "{$prefix}_{$id}.{$novaExt}";
     }
