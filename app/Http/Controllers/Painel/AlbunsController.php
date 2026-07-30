@@ -84,11 +84,23 @@ class AlbunsController extends Controller
             'preco' => ['required', 'numeric', 'min:0'],
             'preco_por_video' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
             'status' => ['required', 'in:rascunho,publicado'],
+            'tipo' => ['required', 'in:' . implode(',', Album::TIPOS)],
+            'edicao_manual' => ['nullable', 'boolean'],
+            'tempo_edicao_dias' => ['nullable', 'integer', 'min:1', 'max:365'],
         ]);
 
         // Preço vazio → null (herda do evento)
         if (! isset($data['preco_por_video']) || $data['preco_por_video'] === '' || $data['preco_por_video'] === null) {
             $data['preco_por_video'] = null;
+        }
+
+        // Edição manual só faz sentido em álbum de vídeo. Se veio setada num
+        // álbum de imagem (front bugado, request forjado), força false.
+        $data['edicao_manual'] = ($data['tipo'] === Album::TIPO_VIDEO)
+            ? (bool) ($data['edicao_manual'] ?? false)
+            : false;
+        if (! $data['edicao_manual']) {
+            $data['tempo_edicao_dias'] = null;
         }
 
         abort_unless(auth()->user()->eventos()->whereKey($data['evento_id'])->exists(), 403);
@@ -135,10 +147,31 @@ class AlbunsController extends Controller
             'preco' => ['required', 'numeric', 'min:0'],
             'preco_por_video' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
             'status' => ['required', 'in:rascunho,publicado'],
+            'tipo' => ['required', 'in:' . implode(',', Album::TIPOS)],
+            'edicao_manual' => ['nullable', 'boolean'],
+            'tempo_edicao_dias' => ['nullable', 'integer', 'min:1', 'max:365'],
             'descontos_quantidade' => ['nullable', 'array', 'max:10'],
             'descontos_quantidade.*.qtd' => ['required_with:descontos_quantidade.*', 'integer', 'min:1', 'max:1000'],
             'descontos_quantidade.*.percentual' => ['required_with:descontos_quantidade.*', 'numeric', 'min:0.01', 'max:100'],
         ]);
+
+        // Edição manual só em álbum de vídeo — se front mandou pra imagem, ignora.
+        $data['edicao_manual'] = ($data['tipo'] === Album::TIPO_VIDEO)
+            ? (bool) ($data['edicao_manual'] ?? false)
+            : false;
+        if (! $data['edicao_manual']) {
+            $data['tempo_edicao_dias'] = null;
+        }
+
+        // Trocar de 'video' pra 'imagem' (ou vice-versa) com itens já enviados
+        // é uma incoerência que só admin resolve manualmente. Bloqueia trocar
+        // se houver itens do tipo oposto ao novo — evita filtrar-e-mostrar
+        // itens que não deveriam existir no álbum.
+        if ($data['tipo'] !== $album->tipo && $album->videos()->exists()) {
+            abort(response()->json([
+                'message' => 'Não é possível mudar o tipo do álbum com vídeos/fotos já enviados. Remova os itens existentes primeiro.',
+            ], 422));
+        }
 
         // Preço vazio → null (herda do evento)
         if (! isset($data['preco_por_video']) || $data['preco_por_video'] === '' || $data['preco_por_video'] === null) {
@@ -245,6 +278,18 @@ class AlbunsController extends Controller
 
             return $video;
         });
+
+        // Álbum de edição manual: sistema não processa. Marca concluído
+        // usando o próprio arquivo enviado como preview público.
+        if ($album->ehEdicaoManual()) {
+            $video->update([
+                'status' => Video::STATUS_CONCLUIDO,
+                'arquivo_processado_path' => $video->arquivo_original_path,
+                'arquivo_preview_path' => $video->arquivo_original_path,
+                'processado_em' => now(),
+            ]);
+            return response()->json(['video' => $video, 'message' => 'Vídeo enviado (edição manual — sem processamento).'], 201);
+        }
 
         ProcessarVideoJob::dispatch($video->id);
 

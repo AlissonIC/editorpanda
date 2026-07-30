@@ -10,6 +10,18 @@ class Album extends Model
 {
     protected $table = 'albuns';
 
+    // Um álbum é EXCLUSIVO — só vídeos ou só imagens. Isso simplifica o
+    // display público (sem play button falso em foto), permite validar o
+    // upload cedo, e torna as métricas ("N vídeos" / "N fotos") corretas.
+    public const TIPO_VIDEO = 'video';
+    public const TIPO_IMAGEM = 'imagem';
+    public const TIPOS = [self::TIPO_VIDEO, self::TIPO_IMAGEM];
+
+    // MIME types aceitos por tipo — usado pelo upload validator e pelo attr
+    // `accept` do <input type=file> no painel.
+    public const MIMES_VIDEO = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm'];
+    public const MIMES_IMAGEM = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+
     protected $fillable = [
         'user_id',
         'evento_id',
@@ -24,6 +36,9 @@ class Album extends Model
         'preco_por_video',
         'descontos_quantidade',
         'status',
+        'tipo',
+        'edicao_manual',
+        'tempo_edicao_dias',
         'rotacao_padrao',
         'espelhado_padrao',
     ];
@@ -36,7 +51,20 @@ class Album extends Model
             'descontos_quantidade' => 'array',
             'rotacao_padrao' => 'integer',
             'espelhado_padrao' => 'boolean',
+            'edicao_manual' => 'boolean',
+            'tempo_edicao_dias' => 'integer',
         ];
+    }
+
+    /**
+     * Album marcado como edição manual: cliente edita os vídeos externamente
+     * e entrega direto pro comprador. Nossa plataforma serve só como vitrine
+     * e checkout — não processa os vídeos, não gera download.
+     * Só faz sentido pra álbuns de vídeo (imagens seguem o fluxo normal).
+     */
+    public function ehEdicaoManual(): bool
+    {
+        return $this->tipo === self::TIPO_VIDEO && (bool) $this->edicao_manual;
     }
 
     /**
@@ -53,6 +81,20 @@ class Album extends Model
     public function ehGratuito(): bool
     {
         return $this->precoEfetivoPorVideo() <= 0;
+    }
+
+    public function ehAlbumImagem(): bool
+    {
+        return $this->tipo === self::TIPO_IMAGEM;
+    }
+
+    /**
+     * MIME types aceitos por este álbum. Usado pelo upload backend e pelo
+     * `accept` do <input type=file> no cliente.
+     */
+    public function mimesAceitos(): array
+    {
+        return $this->ehAlbumImagem() ? self::MIMES_IMAGEM : self::MIMES_VIDEO;
     }
 
     /**

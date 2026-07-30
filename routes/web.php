@@ -259,6 +259,12 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
 
         Route::get('configuracoes', [Admin\ConfiguracoesController::class, 'index'])->name('configuracoes.index');
         Route::put('configuracoes', [Admin\ConfiguracoesController::class, 'update'])->name('configuracoes.update');
+        Route::post('configuracoes/testar-whatsapp', [Admin\ConfiguracoesController::class, 'testarWhatsApp'])
+            ->middleware('throttle:20,1')
+            ->name('configuracoes.testar-whatsapp');
+        Route::post('configuracoes/testar-email', [Admin\ConfiguracoesController::class, 'testarEmail'])
+            ->middleware('throttle:20,1')
+            ->name('configuracoes.testar-email');
 
         Route::get('planos', [Admin\PlanosController::class, 'index'])->name('planos.index');
         Route::get('planos/data', [Admin\PlanosController::class, 'data'])->name('planos.data');

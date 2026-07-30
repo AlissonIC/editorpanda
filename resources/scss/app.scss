@@ -614,6 +614,43 @@ body {
     }
 }
 
+/* Card "Identidade visual" — capa + logo compactos lado a lado com controles.
+   Substitui os 2 cards antigos que ocupavam ~500px de altura na sidebar. */
+.ev-brand-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+.ev-brand-thumb {
+    flex-shrink: 0;
+    background: #eef1f6 center/cover no-repeat;
+    border: 1px dashed #d1d5db;
+    border-radius: 0.5rem;
+    display: flex; align-items: center; justify-content: center;
+    color: #9ca3af;
+    font-size: 1.4rem;
+    // has-capa é o nome que o JS toggla (compartilhado com o preview antigo)
+    &.has-capa {
+        border-style: solid;
+        border-color: #d5cffc;
+        color: transparent;
+    }
+    &--capa {
+        // 16:9 pequeno — thumb suficiente pra ver a imagem, não domina o card
+        width: 110px;
+        aspect-ratio: 16 / 9;
+    }
+    &--logo {
+        // Quadrado — logos raramente são retangulares
+        width: 80px;
+        height: 80px;
+    }
+}
+.ev-brand-info {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .album-mini-card {
     background: #fff;
     border: 1px solid #eef0f3;
@@ -1784,6 +1821,86 @@ body {
     flex-wrap: wrap;
 }
 
+/* Barra de filtros — style iOS Photos. Rola horizontal em mobile,
+   pega toda largura em desktop. Aparece só pra items de imagem. */
+.pv-filters-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(0, 0, 0, 0.8);
+    flex-shrink: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.pv-filters-scroll {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1 1 auto;
+    // Esconde scrollbar visual — usuário rola com touch/wheel horizontal
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
+    // Snap-scroll pra facilitar seleção touch
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+}
+.pv-filter-btn {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    background: transparent;
+    border: none;
+    padding: 0.1rem;
+    cursor: pointer;
+    scroll-snap-align: start;
+    color: rgba(255, 255, 255, 0.75);
+    transition: color 0.15s;
+
+    &:hover { color: #fff; }
+    &.is-active {
+        color: #fff;
+        .pv-filter-thumb { border-color: #fff; }
+    }
+}
+.pv-filter-thumb {
+    display: block;
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    background: #222;
+    transition: border-color 0.15s;
+    img {
+        width: 100%; height: 100%;
+        object-fit: cover;
+        display: block;
+        // O filter é setado inline no <img> por JS pra cada thumbnail
+    }
+}
+.pv-filter-label {
+    font-size: 0.65rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+}
+.pv-filters-download {
+    flex: 0 0 auto;
+    // Botão redondo com ícone só
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+    border-radius: 50%;
+    &:disabled { opacity: 0.5; }
+}
+@media (max-width: 640px) {
+    .pv-filter-thumb { width: 48px; height: 48px; }
+    .pv-filter-label { font-size: 0.6rem; }
+}
+
 @media (max-width: 640px) {
     .pv-player-nav { width: 40px; height: 40px; font-size: 1.2rem; }
     .pv-player-nav.pv-player-prev { left: 0.25rem; }
@@ -1816,6 +1933,18 @@ body {
     width: 100%;
     height: 70vh;
     overflow: hidden;
+    position: relative; // pro .preview-loading ancorar
+}
+.preview-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.75);
+    pointer-events: none;
+    z-index: 2;
 }
 .preview-viewport video,
 .preview-viewport img {

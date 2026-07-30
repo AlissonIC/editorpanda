@@ -34,6 +34,23 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshPreview();
     applyHerdar();
 
+    // ==== Toggle "Edição manual" ====
+    // Bloco só é relevante quando tipo=video. Se admin mudar pra imagem, o
+    // checkbox desmarca e o campo de prazo some.
+    const edicaoWrap = form.querySelector('.js-edicao-manual-wrap');
+    const edicaoCheck = form.querySelector('input[name="edicao_manual"]');
+    const prazoWrap = form.querySelector('.js-edicao-manual-prazo');
+    function refreshEdicaoManual() {
+        const tipo = form.querySelector('input[name="tipo"]:checked')?.value || 'video';
+        if (edicaoWrap) edicaoWrap.style.display = tipo === 'video' ? '' : 'none';
+        // Se saiu de video pra imagem, desmarca (backend também força)
+        if (tipo !== 'video' && edicaoCheck) edicaoCheck.checked = false;
+        if (prazoWrap) prazoWrap.style.display = (edicaoCheck?.checked) ? '' : 'none';
+    }
+    form.querySelectorAll('.js-album-tipo').forEach((r) => r.addEventListener('change', refreshEdicaoManual));
+    edicaoCheck?.addEventListener('change', refreshEdicaoManual);
+    refreshEdicaoManual();
+
     const statusEl = document.getElementById('alb-save-status');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();

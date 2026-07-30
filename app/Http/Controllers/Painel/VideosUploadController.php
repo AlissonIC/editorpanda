@@ -48,6 +48,16 @@ class VideosUploadController extends Controller
             'total_parts' => ['required', 'integer', 'min:1', 'max:' . self::PARTS_MAX],
         ]);
 
+        // Álbum define se aceita vídeo OU imagem (exclusivo — evita misturar
+        // formatos que quebram a experiência pública). Bloqueia cedo, antes
+        // de reservar quota ou criar linha no banco.
+        if (! in_array($data['content_type'], $album->mimesAceitos(), true)) {
+            $rotulo = $album->ehAlbumImagem() ? 'imagens (JPG, PNG, WEBP, HEIC)' : 'vídeos (MP4, MOV, MKV, WEBM)';
+            abort(response()->json([
+                'message' => "Este álbum aceita apenas {$rotulo}. Envie um arquivo compatível.",
+            ], 422));
+        }
+
         // Consistência: o cliente diz X partes de Y bytes; a última pode ser menor.
         $partesEsperadas = (int) ceil($data['tamanho_bytes'] / $data['chunk_size']);
         abort_unless($partesEsperadas === $data['total_parts'], 422, 'Parâmetros de chunk inconsistentes.');
@@ -391,6 +401,28 @@ class VideosUploadController extends Controller
 
         // Contador NÃO é incrementado aqui — já foi reservado no init.
         // Isso previne race condition entre uploads concorrentes ultrapassando a cota.
+
+        // Álbum de edição manual: sistema não processa. Marca concluído
+        // direto e usa o próprio arquivo original como preview público
+        // (nada de watermark, nada de re-encode). Comprador recebe mensagem
+        // dizendo que entraremos em contato pra enviar externamente.
+        $album = $video->album()->first();
+        if ($album?->ehEdicaoManual()) {
+            $video->update([
+                'status' => Video::STATUS_CONCLUIDO,
+                'upload_id' => null,
+                'parts_json' => null,
+                'arquivo_processado_path' => $video->arquivo_original_path,
+                'arquivo_preview_path' => $video->arquivo_original_path,
+                'processado_em' => now(),
+                'erro_msg' => null,
+            ]);
+            $video->loadMissing('album:id,evento_id,nome', 'album.evento:id,nome');
+            return response()->json([
+                'message' => 'Upload concluído (álbum de edição manual — sem processamento).',
+                'video' => $this->cardData($video->fresh()->loadMissing('album:id,evento_id,nome', 'album.evento:id,nome')),
+            ]);
+        }
 
         $video->update([
             'status' => Video::STATUS_PENDENTE,

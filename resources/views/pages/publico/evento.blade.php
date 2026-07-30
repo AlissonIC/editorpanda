@@ -28,15 +28,19 @@
                 @php
                     $preco = $album->preco_por_video ?? $precoEvento;
                     $gratis = $preco <= 0;
+                    $capaAlbum = $album->fotoPrincipalUrl();
+                    $ehImg = $album->ehAlbumImagem();
+                    $rotuloContagem = $ehImg ? 'fotos' : 'vídeos';
+                    $iconeContagem = $ehImg ? 'bi-image' : 'bi-film';
+                    $rotuloUnidade = $ehImg ? '/foto' : '/vídeo';
                 @endphp
-                @php $capaAlbum = $album->fotoPrincipalUrl(); @endphp
                 <div class="col-6 col-md-4 col-lg-3">
                     <a href="{{ route('publico.album.show', $album->slug) }}" class="pv-album-card text-decoration-none">
                         <div class="pv-album-cover">
                             @if($capaAlbum)
                                 <img src="{{ $capaAlbum }}" alt="" loading="lazy">
                             @else
-                                <i class="bi bi-collection"></i>
+                                <i class="bi {{ $ehImg ? 'bi-images' : 'bi-collection-play' }}"></i>
                             @endif
                             @if($gratis)
                                 <span class="pv-album-gratis">Grátis</span>
@@ -48,11 +52,11 @@
                                 <div class="small text-muted text-truncate">{{ $album->subtitulo }}</div>
                             @endif
                             <div class="d-flex justify-content-between align-items-center mt-2 small">
-                                <span class="text-muted"><i class="bi bi-film me-1"></i>{{ $album->videos_count }} vídeos</span>
+                                <span class="text-muted"><i class="bi {{ $iconeContagem }} me-1"></i>{{ $album->videos_count }} {{ $rotuloContagem }}</span>
                                 @if($gratis)
                                     <span class="fw-bold text-success">Grátis</span>
                                 @else
-                                    <span class="fw-bold text-dark">R$ {{ number_format($preco, 2, ',', '.') }} /vídeo</span>
+                                    <span class="fw-bold text-dark">R$ {{ number_format($preco, 2, ',', '.') }} {{ $rotuloUnidade }}</span>
                                 @endif
                             </div>
                         </div>

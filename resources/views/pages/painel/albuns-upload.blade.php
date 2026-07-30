@@ -10,6 +10,16 @@
     <a href="{{ route('painel.albuns.index') }}" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left me-1"></i> Voltar
     </a>
+    @if($album->status === 'publicado')
+        <a href="{{ route('publico.album.show', $album->slug) }}" target="_blank" rel="noopener" class="btn btn-outline-secondary">
+            <i class="bi bi-box-arrow-up-right me-1"></i> Link público
+        </a>
+    @endif
+    @if($album->evento?->status === 'ativo')
+        <a href="{{ route('publico.evento.show', $album->evento->slug) }}" target="_blank" rel="noopener" class="btn btn-outline-secondary">
+            <i class="bi bi-calendar-event me-1"></i> Ver evento
+        </a>
+    @endif
 </x-theme::page-header>
 
 <div class="row g-4">
@@ -37,26 +47,40 @@
             </div>
         @else
             {{-- Dropzone compacto: empilha em mobile --}}
+            @php
+                $ehImagem = $album->ehAlbumImagem();
+                $mimesAceitos = $album->mimesAceitos();
+                $rotuloTipo = $ehImagem ? 'Fotos (JPG, PNG, WEBP, HEIC)' : 'Vídeos (MP4, MOV, MKV, WEBM)';
+                $iconeTipo = $ehImagem ? 'bi-image' : 'bi-film';
+            @endphp
             <div class="panda-card p-0 overflow-hidden">
                 <div
                     id="dropzone"
                     class="dropzone dropzone-compact p-4"
                     data-init-url="{{ route('painel.albuns.videos.init', $album) }}"
+                    data-album-tipo="{{ $album->tipo }}"
+                    data-mimes="{{ implode(',', $mimesAceitos) }}"
                 >
                     <div class="dz-icon">
-                        <i class="bi bi-cloud-arrow-up"></i>
+                        <i class="bi {{ $ehImagem ? 'bi-image' : 'bi-cloud-arrow-up' }}"></i>
                     </div>
                     <div class="dz-text">
-                        <h5 class="fw-bold mb-1">Arraste vídeos ou imagens, ou clique para adicionar</h5>
+                        <h5 class="fw-bold mb-1">
+                            @if($ehImagem)
+                                Arraste fotos ou clique para adicionar
+                            @else
+                                Arraste vídeos ou clique para adicionar
+                            @endif
+                        </h5>
                         <p class="small text-muted mb-0">
-                            Vídeo (MP4, MOV, MKV, WEBM) ou imagem (JPG, PNG, WEBP, HEIC) · envio em partes — até 300&nbsp;MB por arquivo
+                            <i class="bi {{ $iconeTipo }} me-1"></i>Álbum de <strong>{{ $ehImagem ? 'fotos' : 'vídeos' }}</strong> · {{ $rotuloTipo }} · envio em partes até 300&nbsp;MB por arquivo
                         </p>
                     </div>
                     <button type="button" class="btn btn-dark-panda dz-btn" id="btn-select">
                         <i class="bi bi-plus-lg me-1"></i> Adicionar
                     </button>
                     <input type="file" id="file-input" class="d-none"
-                           accept="video/mp4,video/quicktime,video/x-matroska,video/webm,image/jpeg,image/png,image/webp,image/heic,image/heif"
+                           accept="{{ implode(',', $mimesAceitos) }}"
                            multiple>
                 </div>
 

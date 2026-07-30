@@ -3,6 +3,7 @@ import {
     mountCardBricks, unmountCardBricks,
     criarPix, pagarCartao, iniciarPolling, pararPolling,
 } from '../../lib/pagamento';
+import { FILTROS, getFiltro, baixarComFiltro } from '../../lib/imagem-filtros';
 import axios from 'axios';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -104,25 +105,33 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function renderCard(v, idx) {
         const checked = selectedIds.has(Number(v.id)) ? 'checked' : '';
+        const isImg = !!v.is_imagem;
+        const cardExtraClass = isImg ? ' pv-video-card--imagem' : '';
         const selectedClass = selectedIds.has(Number(v.id)) ? ' is-selected' : '';
+        const fallbackIcon = isImg ? 'bi-image' : 'bi-film';
+        const overlayIcon = isImg ? 'bi-arrows-fullscreen' : 'bi-play-circle-fill';
+        const playTitle = isImg ? 'Ampliar foto' : 'Pré-visualizar';
         const thumbInner = v.thumbnail_url
             ? `<img src="${escapeHtml(v.thumbnail_url)}" alt="" loading="lazy" decoding="async">`
-            : '<i class="bi bi-film"></i>';
+            : `<i class="bi ${fallbackIcon}"></i>`;
+        const duracaoLinha = isImg
+            ? ''
+            : `<div class="small text-muted">${escapeHtml(v.duracao)}</div>`;
         return `
-            <div class="pv-video-card${selectedClass}" data-video-index="${idx}" data-video-id="${v.id}">
+            <div class="pv-video-card${cardExtraClass}${selectedClass}" data-video-index="${idx}" data-video-id="${v.id}">
                 <label class="pv-video-check-wrap">
                     <input type="checkbox" class="pv-video-check" value="${v.id}" ${checked}>
                     <div class="pv-check-badge"><i class="bi bi-check-lg"></i></div>
                 </label>
-                <button type="button" class="pv-video-play-btn" data-video-index="${idx}" title="Pré-visualizar">
+                <button type="button" class="pv-video-play-btn" data-video-index="${idx}" title="${playTitle}">
                     <div class="pv-video-thumb">
                         ${thumbInner}
-                        <div class="pv-play-overlay"><i class="bi bi-play-circle-fill"></i></div>
+                        <div class="pv-play-overlay"><i class="bi ${overlayIcon}"></i></div>
                     </div>
                 </button>
                 <div class="pv-video-info">
                     <div class="text-truncate small fw-medium">${escapeHtml(v.nome)}</div>
-                    <div class="small text-muted">${escapeHtml(v.duracao)}</div>
+                    ${duracaoLinha}
                 </div>
             </div>
         `;
@@ -300,8 +309,13 @@ document.addEventListener('DOMContentLoaded', () => {
             videoEl.pause?.();
             videoEl.removeAttribute('src');
             videoEl.style.display = 'none';
+            // Precisa de crossOrigin ANTES do src pra permitir canvas depois
+            // (nosso preview é same-origin, então CORS não bloqueia). Sem isso,
+            // o canvas fica "tainted" e toBlob() falha silenciosamente.
+            imageEl.crossOrigin = 'anonymous';
             imageEl.src = v.preview_url;
             imageEl.style.display = '';
+            mostrarFiltros(v);
         } else {
             imageEl.removeAttribute('src');
             imageEl.style.display = 'none';
@@ -309,6 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
             videoEl.src = v.preview_url;
             videoEl.load();
             videoEl.play().catch(() => {}); // navegador pode bloquear autoplay
+            esconderFiltros();
         }
         titleEl.textContent = v.nome;
         nameEl.textContent = v.nome;
@@ -331,6 +346,97 @@ document.addEventListener('DOMContentLoaded', () => {
         // em N/500 quando o restante ainda não foi buscado.
         if (idx >= videos.length - 3) carregarProximaPagina();
     }
+
+    // ==================== Filtros de imagem (client-side, iOS style) ====================
+    const filtersBar = document.getElementById('pv-filters-bar');
+    const filtersScroll = document.getElementById('pv-filters-scroll');
+    const filtersDownloadBtn = document.getElementById('pv-filters-download');
+    let filtroAtual = 'original';
+
+    function esconderFiltros() {
+        if (filtersBar) filtersBar.style.display = 'none';
+        // Limpa o filtro do <img> pra não persistir se voltar depois
+        if (imageEl) imageEl.style.filter = '';
+    }
+
+    /**
+     * Popula a barra com miniaturas do vídeo atual (mesma thumbnail_url em
+     * cada botão, mas com filter CSS diferente aplicado). Se o item não tem
+     * thumbnail, usa preview_url — piora custo de banda mas garante preview
+     * visual da filtragem.
+     */
+    function mostrarFiltros(v) {
+        if (!filtersBar) return;
+        const thumbUrl = v.thumbnail_url || v.preview_url;
+        if (!thumbUrl) return esconderFiltros();
+
+        // Reset pra "Original" ao trocar de item — evita que o usuário ache que
+        // "sujou" a próxima foto sem querer.
+        filtroAtual = 'original';
+        imageEl.style.filter = '';
+
+        // Rebuilda buttons quando muda de item (thumb src muda; simpler = full rebuild)
+        filtersScroll.innerHTML = FILTROS.map((f) => `
+            <button type="button" class="pv-filter-btn ${f.key === filtroAtual ? 'is-active' : ''}" data-filter="${f.key}">
+                <span class="pv-filter-thumb">
+                    <img src="${thumbUrl}" alt="" loading="lazy" style="filter:${f.css || 'none'}">
+                </span>
+                <span class="pv-filter-label">${f.label}</span>
+            </button>
+        `).join('');
+        filtersBar.style.display = '';
+    }
+
+    /**
+     * Handler delegado: clique num filter-btn troca o filtro do preview principal
+     * (via CSS) e atualiza o estado visual dos botões.
+     */
+    filtersScroll?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.pv-filter-btn');
+        if (!btn) return;
+        const key = btn.dataset.filter;
+        const filtro = getFiltro(key);
+        filtroAtual = key;
+        imageEl.style.filter = filtro.css || '';
+        filtersScroll.querySelectorAll('.pv-filter-btn').forEach((b) => {
+            b.classList.toggle('is-active', b.dataset.filter === key);
+        });
+    });
+
+    /**
+     * Download da imagem atual com o filtro aplicado. Renderiza num canvas
+     * client-side (usa ctx.filter se suportado, senão pixel manipulation JS)
+     * e faz download via blob URL — sem chamar backend.
+     */
+    filtersDownloadBtn?.addEventListener('click', async () => {
+        if (indiceAtual < 0) return;
+        const v = videos[indiceAtual];
+        if (!v?.is_imagem) return;
+        const filtro = getFiltro(filtroAtual);
+
+        filtersDownloadBtn.disabled = true;
+        const orig = filtersDownloadBtn.innerHTML;
+        filtersDownloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        try {
+            // A imagem já está carregada no imageEl (mesma que o usuário vê).
+            // Se ainda não terminou de decodificar, espera.
+            if (!imageEl.complete) {
+                await new Promise((res, rej) => {
+                    imageEl.onload = res;
+                    imageEl.onerror = rej;
+                });
+            }
+            const nomeBase = (v.nome || `foto-${v.id}`);
+            const sufixo = filtro.key === 'original' ? '' : `-${filtro.key}`;
+            await baixarComFiltro(imageEl, filtro, `${nomeBase}${sufixo}`);
+        } catch (err) {
+            console.warn('[filtros] falha ao baixar:', err);
+            window.showToast?.('Falha ao gerar imagem. Tente outro navegador.', 'error');
+        } finally {
+            filtersDownloadBtn.disabled = false;
+            filtersDownloadBtn.innerHTML = orig;
+        }
+    });
 
     /**
      * Navega pro índice N. Se o vídeo ainda não foi paginado, aguarda a

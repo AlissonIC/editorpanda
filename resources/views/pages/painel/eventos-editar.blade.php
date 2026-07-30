@@ -66,7 +66,7 @@
             <div class="panda-card mb-4">
                 <h5 class="fw-bold mb-1">Descrição</h5>
                 <p class="text-muted small mb-3">Aparece na página pública do evento, acima dos álbuns.</p>
-                <textarea name="descricao" class="form-control" rows="5"
+                <textarea name="descricao" class="form-control" rows="3"
                           maxlength="5000"
                           placeholder="Conte sobre o evento, local, fotógrafo…">{{ $evento->descricao }}</textarea>
             </div>
@@ -205,52 +205,57 @@
         </div>
 
         <div class="col-lg-4">
-            {{-- Capa do evento --}}
+            {{-- Identidade visual: capa + logo unificados num único card compacto.
+                 Antes eram 2 cards enormes com preview 16:9 em cada — desperdiçava
+                 muito espaço vertical na sidebar. --}}
             <div class="panda-card mb-4">
-                <h5 class="fw-bold mb-1">Capa do evento</h5>
-                <p class="text-muted small mb-3">Imagem que aparece no topo da página pública.</p>
+                <h5 class="fw-bold mb-3">Identidade visual</h5>
 
-                <div class="ev-capa-preview mb-3 {{ $evento->capa_url ? 'has-capa' : '' }}" id="ev-capa-preview"
-                     style="{{ $evento->capa_url ? 'background-image:url('.$evento->capa_url.')' : '' }}"
-                     data-url="{{ route('painel.eventos.capa.upload', $evento) }}"
-                     data-delete-url="{{ route('painel.eventos.capa.delete', $evento) }}">
-                    @unless($evento->capa_url)<i class="bi bi-image"></i>@endunless
+                {{-- CAPA — mini preview 16:9 lado do controle --}}
+                <div class="ev-brand-row mb-3">
+                    <div class="ev-brand-thumb ev-brand-thumb--capa {{ $evento->capa_url ? 'has-capa' : '' }}" id="ev-capa-preview"
+                         style="{{ $evento->capa_url ? 'background-image:url('.$evento->capa_url.')' : '' }}"
+                         data-url="{{ route('painel.eventos.capa.upload', $evento) }}"
+                         data-delete-url="{{ route('painel.eventos.capa.delete', $evento) }}">
+                        @unless($evento->capa_url)<i class="bi bi-image"></i>@endunless
+                    </div>
+                    <div class="ev-brand-info">
+                        <div class="fw-semibold small">Capa</div>
+                        <div class="text-muted" style="font-size:.72rem;">Topo da página pública · JPG/PNG/WEBP até 4&nbsp;MB</div>
+                        <div class="d-flex gap-1 mt-2">
+                            <label class="btn btn-sm btn-dark-panda flex-grow-1 py-1" style="font-size:.75rem;">
+                                <i class="bi bi-upload"></i> {{ $evento->capa_url ? 'Trocar' : 'Escolher' }}
+                                <input type="file" id="ev-capa-input" class="d-none" accept="image/png,image/jpeg,image/webp">
+                            </label>
+                            <button type="button" class="btn btn-sm btn-outline-danger py-1 {{ $evento->capa_url ? '' : 'd-none' }}" id="ev-capa-remove">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="d-flex gap-2">
-                    <label class="btn btn-sm btn-dark-panda flex-grow-1">
-                        <i class="bi bi-upload me-1"></i>{{ $evento->capa_url ? 'Trocar' : 'Escolher imagem' }}
-                        <input type="file" id="ev-capa-input" class="d-none" accept="image/png,image/jpeg,image/webp">
-                    </label>
-                    <button type="button" class="btn btn-sm btn-outline-danger {{ $evento->capa_url ? '' : 'd-none' }}" id="ev-capa-remove">
-                        <i class="bi bi-trash"></i>
-                    </button>
+                {{-- LOGO — preview quadrado (é um logo, não faz sentido 16:9) --}}
+                <div class="ev-brand-row">
+                    <div class="ev-brand-thumb ev-brand-thumb--logo {{ $evento->logo_url ? 'has-capa' : '' }}" id="ev-brand-logo-preview"
+                         style="{{ $evento->logo_url ? 'background-image:url('.$evento->logo_url.')' : '' }}"
+                         data-url="{{ route('painel.eventos.logo.upload', $evento) }}"
+                         data-delete-url="{{ route('painel.eventos.logo.delete', $evento) }}">
+                        @unless($evento->logo_url)<i class="bi bi-image"></i>@endunless
+                    </div>
+                    <div class="ev-brand-info">
+                        <div class="fw-semibold small">Logo</div>
+                        <div class="text-muted" style="font-size:.72rem;">Branding na página pública (não é a marca d'água dos vídeos) · até 2&nbsp;MB</div>
+                        <div class="d-flex gap-1 mt-2">
+                            <label class="btn btn-sm btn-dark-panda flex-grow-1 py-1" style="font-size:.75rem;">
+                                <i class="bi bi-upload"></i> {{ $evento->logo_url ? 'Trocar' : 'Escolher' }}
+                                <input type="file" id="ev-brand-logo-input" class="d-none" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+                            </label>
+                            <button type="button" class="btn btn-sm btn-outline-danger py-1 {{ $evento->logo_url ? '' : 'd-none' }}" id="ev-brand-logo-remove">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <small class="text-muted d-block mt-2">JPG, PNG ou WEBP · até 4&nbsp;MB</small>
-            </div>
-
-            {{-- Logo do evento (branding público — diferente da marca d'água do processamento) --}}
-            <div class="panda-card mb-4">
-                <h5 class="fw-bold mb-1">Logo do evento</h5>
-                <p class="text-muted small mb-3">Logo mostrada na página pública. Não é a marca d'água dos vídeos.</p>
-
-                <div class="ev-capa-preview mb-3 {{ $evento->logo_url ? 'has-capa' : '' }}" id="ev-brand-logo-preview"
-                     style="{{ $evento->logo_url ? 'background-image:url('.$evento->logo_url.')' : '' }}"
-                     data-url="{{ route('painel.eventos.logo.upload', $evento) }}"
-                     data-delete-url="{{ route('painel.eventos.logo.delete', $evento) }}">
-                    @unless($evento->logo_url)<i class="bi bi-image"></i>@endunless
-                </div>
-
-                <div class="d-flex gap-2">
-                    <label class="btn btn-sm btn-dark-panda flex-grow-1">
-                        <i class="bi bi-upload me-1"></i>{{ $evento->logo_url ? 'Trocar' : 'Escolher imagem' }}
-                        <input type="file" id="ev-brand-logo-input" class="d-none" accept="image/png,image/jpeg,image/webp,image/svg+xml">
-                    </label>
-                    <button type="button" class="btn btn-sm btn-outline-danger {{ $evento->logo_url ? '' : 'd-none' }}" id="ev-brand-logo-remove">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-                <small class="text-muted d-block mt-2">PNG, JPG, WEBP ou SVG · até 2&nbsp;MB</small>
             </div>
 
             {{-- Barra de ação --}}
@@ -337,6 +342,50 @@
                     <label class="form-label small">Descrição</label>
                     <textarea name="descricao" class="form-control" rows="2"></textarea>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label small d-block">Tipo do álbum</label>
+                    <div class="pv-metodo-tiles" style="max-width:360px;">
+                        <label class="pv-metodo-tile">
+                            <input type="radio" name="tipo" value="video" checked class="js-album-tipo">
+                            <span class="pv-metodo-tile-body">
+                                <i class="bi bi-film"></i>
+                                <span class="pv-metodo-title">Vídeos</span>
+                                <span class="pv-metodo-sub">MP4, MOV, MKV, WEBM</span>
+                            </span>
+                        </label>
+                        <label class="pv-metodo-tile">
+                            <input type="radio" name="tipo" value="imagem" class="js-album-tipo">
+                            <span class="pv-metodo-tile-body">
+                                <i class="bi bi-image"></i>
+                                <span class="pv-metodo-title">Fotos</span>
+                                <span class="pv-metodo-sub">JPG, PNG, WEBP, HEIC</span>
+                            </span>
+                        </label>
+                    </div>
+                    <small class="text-muted">Define o que pode ser enviado neste álbum. Não pode mudar depois de ter itens.</small>
+                </div>
+
+                {{-- Edição manual (aparece só se tipo=video, wire via JS abaixo).
+                     Quando ativa: sistema NÃO processa os vídeos e o comprador
+                     recebe mensagem informando prazo de entrega manual. --}}
+                <div class="mb-3 js-edicao-manual-wrap">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="edicao_manual" value="1" id="album-edicao-manual">
+                        <label class="form-check-label small" for="album-edicao-manual">
+                            <strong>Edição manual</strong> — você edita e envia os vídeos externamente
+                        </label>
+                    </div>
+                    <div class="mt-2 js-edicao-manual-prazo" style="display:none;">
+                        <label class="form-label small" for="album-tempo-edicao">Prazo médio de entrega</label>
+                        <div class="input-group input-group-sm" style="max-width:200px;">
+                            <input type="number" name="tempo_edicao_dias" min="1" max="365" value="7"
+                                   class="form-control" id="album-tempo-edicao">
+                            <span class="input-group-text">dias</span>
+                        </div>
+                        <small class="text-muted">Exibido pro comprador antes e depois da compra.</small>
+                    </div>
+                </div>
+
                 <div class="row g-3">
                     <div class="col-md-4 mb-3">
                         <label class="form-label small">Preço fixo do álbum</label>

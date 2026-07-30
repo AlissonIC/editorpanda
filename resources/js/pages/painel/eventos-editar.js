@@ -242,6 +242,22 @@ document.addEventListener('DOMContentLoaded', () => {
         precoAlbumInput.disabled = herdarCheck.checked;
     });
 
+    // Toggle "Edição manual" — só relevante em álbum de vídeo
+    if (formAlbum) {
+        const emWrap = formAlbum.querySelector('.js-edicao-manual-wrap');
+        const emCheck = formAlbum.querySelector('input[name="edicao_manual"]');
+        const emPrazo = formAlbum.querySelector('.js-edicao-manual-prazo');
+        const syncEm = () => {
+            const tipo = formAlbum.querySelector('input[name="tipo"]:checked')?.value || 'video';
+            if (emWrap) emWrap.style.display = tipo === 'video' ? '' : 'none';
+            if (tipo !== 'video' && emCheck) emCheck.checked = false;
+            if (emPrazo) emPrazo.style.display = emCheck?.checked ? '' : 'none';
+        };
+        formAlbum.querySelectorAll('.js-album-tipo').forEach((r) => r.addEventListener('change', syncEm));
+        emCheck?.addEventListener('change', syncEm);
+        syncEm();
+    }
+
     formAlbum?.addEventListener('submit', async (e) => {
         e.preventDefault();
         formAlbum.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));

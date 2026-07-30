@@ -62,6 +62,61 @@
                     <textarea name="descricao" class="form-control" rows="4"
                               placeholder="Sobre este álbum…">{{ $album->descricao }}</textarea>
                 </div>
+
+                @php $temItens = $album->videos()->exists(); @endphp
+                <div class="mb-3">
+                    <label class="form-label small d-block">Tipo do álbum</label>
+                    <div class="pv-metodo-tiles" style="max-width:360px;">
+                        <label class="pv-metodo-tile">
+                            <input type="radio" name="tipo" value="video" class="js-album-tipo"
+                                   @checked($album->tipo === 'video')
+                                   {{ $temItens ? 'disabled' : '' }}>
+                            <span class="pv-metodo-tile-body">
+                                <i class="bi bi-film"></i>
+                                <span class="pv-metodo-title">Vídeos</span>
+                                <span class="pv-metodo-sub">MP4, MOV, MKV, WEBM</span>
+                            </span>
+                        </label>
+                        <label class="pv-metodo-tile">
+                            <input type="radio" name="tipo" value="imagem" class="js-album-tipo"
+                                   @checked($album->tipo === 'imagem')
+                                   {{ $temItens ? 'disabled' : '' }}>
+                            <span class="pv-metodo-tile-body">
+                                <i class="bi bi-image"></i>
+                                <span class="pv-metodo-title">Fotos</span>
+                                <span class="pv-metodo-sub">JPG, PNG, WEBP, HEIC</span>
+                            </span>
+                        </label>
+                    </div>
+                    @if($temItens)
+                        <small class="text-muted"><i class="bi bi-lock me-1"></i>Bloqueado — remova os {{ $album->videos()->count() }} itens existentes pra trocar de tipo.</small>
+                    @else
+                        <small class="text-muted">Não pode mudar depois de ter itens enviados.</small>
+                    @endif
+                </div>
+
+                {{-- Edição manual (só relevante em álbum de vídeo). JS esconde se tipo=imagem. --}}
+                <div class="mb-0 js-edicao-manual-wrap">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="edicao_manual" value="1" id="alb-edicao-manual"
+                               @checked($album->edicao_manual)>
+                        <label class="form-check-label small" for="alb-edicao-manual">
+                            <strong>Edição manual</strong> — você edita e envia os vídeos externamente
+                        </label>
+                    </div>
+                    <div class="mt-2 js-edicao-manual-prazo" style="{{ $album->edicao_manual ? '' : 'display:none;' }}">
+                        <label class="form-label small" for="alb-tempo-edicao">Prazo médio de entrega</label>
+                        <div class="input-group input-group-sm" style="max-width:200px;">
+                            <input type="number" name="tempo_edicao_dias" min="1" max="365"
+                                   value="{{ $album->tempo_edicao_dias ?? 7 }}"
+                                   class="form-control" id="alb-tempo-edicao">
+                            <span class="input-group-text">dias</span>
+                        </div>
+                        <small class="text-muted">
+                            Sistema NÃO processa os vídeos deste álbum — comprador recebe mensagem informando que você entrará em contato pra enviar.
+                        </small>
+                    </div>
+                </div>
             </div>
 
             {{-- Preços & status --}}

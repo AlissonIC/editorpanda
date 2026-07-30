@@ -16,7 +16,32 @@
     </a>
 </section>
 
-@php $gratis = $preco <= 0; @endphp
+@php
+    $gratis = $preco <= 0;
+    $edicaoManual = $album->ehEdicaoManual();
+@endphp
+
+@if($edicaoManual)
+    <section class="container pt-3">
+        <div class="alert alert-info d-flex align-items-start gap-3 mb-0" role="status">
+            <div style="font-size:1.5rem; line-height:1;"><i class="bi bi-magic"></i></div>
+            <div class="flex-grow-1">
+                <div class="fw-bold mb-1">Vídeos com edição profissional</div>
+                <p class="small mb-0">
+                    Após a compra, o responsável entra em contato pra entregar os vídeos editados
+                    de forma personalizada
+                    @if($album->tempo_edicao_dias)
+                        em até <strong>{{ $album->tempo_edicao_dias }} {{ $album->tempo_edicao_dias === 1 ? 'dia' : 'dias' }}</strong>.
+                    @else
+                        no menor prazo possível.
+                    @endif
+                    A entrega é feita fora da plataforma (WhatsApp, e-mail, etc.).
+                </p>
+            </div>
+        </div>
+    </section>
+@endif
+
 <section class="container py-4">
     @php $descontos = $album->descontosQuantidadeEfetivos(); @endphp
     <div
@@ -31,10 +56,15 @@
         data-prox-cursor="{{ $proxCursor ?? '' }}"
     >
         <div class="col-lg-8">
+            @php
+                $ehAlbumImg = $album->ehAlbumImagem();
+                $rotuloItens = $ehAlbumImg ? 'fotos' : 'vídeos';
+                $rotuloTitulo = $ehAlbumImg ? 'Fotos' : 'Vídeos';
+            @endphp
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4 class="fw-bold mb-0">Vídeos</h4>
+                <h4 class="fw-bold mb-0">{{ $rotuloTitulo }}</h4>
                 <div class="small text-muted">
-                    {{ $videosTotal }} vídeos ·
+                    {{ $videosTotal }} {{ $rotuloItens }} ·
                     @if($gratis)
                         <span class="text-success fw-semibold">Grátis</span>
                     @else
@@ -45,31 +75,37 @@
 
             @if($videosTotal === 0)
                 <div class="pv-empty">
-                    <i class="bi bi-film"></i>
-                    <p>Nenhum vídeo neste álbum ainda.</p>
+                    <i class="bi {{ $ehAlbumImg ? 'bi-images' : 'bi-film' }}"></i>
+                    <p>Nenhuma {{ $ehAlbumImg ? 'foto' : 'vídeo' }} neste álbum ainda.</p>
                 </div>
             @else
                 <div class="pv-video-grid" id="pv-video-grid" data-videos="{{ json_encode($videos) }}">
                     @foreach($videos as $i => $v)
-                        <div class="pv-video-card" data-video-index="{{ $i }}" data-video-id="{{ $v['id'] }}">
+                        @php $itemEhImagem = ! empty($v['is_imagem']); @endphp
+                        <div class="pv-video-card {{ $itemEhImagem ? 'pv-video-card--imagem' : '' }}" data-video-index="{{ $i }}" data-video-id="{{ $v['id'] }}">
                             <label class="pv-video-check-wrap">
                                 <input type="checkbox" class="pv-video-check" value="{{ $v['id'] }}">
                                 <div class="pv-check-badge"><i class="bi bi-check-lg"></i></div>
                             </label>
                             <button type="button" class="pv-video-play-btn" data-video-index="{{ $i }}"
-                                    title="Pré-visualizar">
+                                    title="{{ $itemEhImagem ? 'Ampliar foto' : 'Pré-visualizar' }}">
                                 <div class="pv-video-thumb">
                                     @if($v['thumbnail_url'])
                                         <img src="{{ $v['thumbnail_url'] }}" alt="" loading="lazy" decoding="async">
                                     @else
-                                        <i class="bi bi-film"></i>
+                                        <i class="bi {{ $itemEhImagem ? 'bi-image' : 'bi-film' }}"></i>
                                     @endif
-                                    <div class="pv-play-overlay"><i class="bi bi-play-circle-fill"></i></div>
+                                    {{-- Overlay: play pra vídeo, lupa pra foto (não engana o usuário). --}}
+                                    <div class="pv-play-overlay">
+                                        <i class="bi {{ $itemEhImagem ? 'bi-arrows-fullscreen' : 'bi-play-circle-fill' }}"></i>
+                                    </div>
                                 </div>
                             </button>
                             <div class="pv-video-info">
                                 <div class="text-truncate small fw-medium">{{ $v['nome'] }}</div>
-                                <div class="small text-muted">{{ $v['duracao'] }}</div>
+                                @unless($itemEhImagem)
+                                    <div class="small text-muted">{{ $v['duracao'] }}</div>
+                                @endunless
                             </div>
                         </div>
                     @endforeach
@@ -144,6 +180,17 @@
                                 </div>
                                 <button type="button" class="pv-player-nav pv-player-next" id="pv-player-next" title="Próximo">
                                     <i class="bi bi-chevron-right"></i>
+                                </button>
+                            </div>
+
+                            {{-- Barra de filtros — só aparece quando o item atual é IMAGEM.
+                                 Filtros são aplicados via CSS filter (super compatível).
+                                 Botão "Salvar com filtro" renderiza a versão filtrada num
+                                 canvas client-side e dispara download — sem backend. --}}
+                            <div class="pv-filters-bar" id="pv-filters-bar" style="display:none;">
+                                <div class="pv-filters-scroll" id="pv-filters-scroll"></div>
+                                <button type="button" class="btn btn-light btn-sm pv-filters-download" id="pv-filters-download" title="Salvar com o filtro selecionado">
+                                    <i class="bi bi-download"></i>
                                 </button>
                             </div>
 

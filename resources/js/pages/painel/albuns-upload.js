@@ -2,12 +2,10 @@ import axios from 'axios';
 import { UploadTask } from '../../lib/upload-task';
 
 const MAX_ARQUIVOS_PARALELOS = 2;
-const ACCEPTED = [
-    'video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm',
-    // Imagens são convertidas em MP4 estático (5s) no processamento
-    'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
-];
-const EXT_REGEX = /\.(mp4|mov|mkv|webm|jpe?g|png|webp|heic|heif)$/i;
+// Extensões válidas por tipo — usadas como fallback quando o browser não
+// preenche file.type (comum com HEIC no Chrome/Firefox desktop).
+const EXT_VIDEO = /\.(mp4|mov|mkv|webm)$/i;
+const EXT_IMAGEM = /\.(jpe?g|png|webp|heic|heif)$/i;
 const MAX_BYTES = 300 * 1024 * 1024; // 300 MB por arquivo
 const VIEW_KEY = 'panda-videos-view';
 
@@ -16,6 +14,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!dropzone) return;
 
     const initUrl = dropzone.dataset.initUrl;
+    // Tipo do álbum define quais mimes/extensões aceitamos. Cada álbum é
+    // exclusivo (video OU imagem) — misturar quebra o rendering público.
+    const albumTipo = dropzone.dataset.albumTipo || 'video';
+    const mimesAceitos = (dropzone.dataset.mimes || '').split(',').filter(Boolean);
+    const extAceita = albumTipo === 'imagem' ? EXT_IMAGEM : EXT_VIDEO;
+    const rotuloTipo = albumTipo === 'imagem' ? 'fotos (JPG, PNG, WEBP, HEIC)' : 'vídeos (MP4, MOV, MKV, WEBM)';
     const fileInput = document.getElementById('file-input');
     const btnSelect = document.getElementById('btn-select');
 
@@ -608,10 +612,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // ---- Adição de arquivos + pipeline ----
     function addFiles(files) {
         [...files].forEach((file) => {
-            const aceito = file.type
-                ? ACCEPTED.includes(file.type)
-                : EXT_REGEX.test(file.name);
-            if (!aceito) { window.showToast(`"${file.name}" não é aceito.`, 'warning'); return; }
+            // Aceita se: (a) MIME casa com os do álbum OU (b) extensão bate
+            // (browsers às vezes não preenchem file.type — HEIC no Chrome/Firefox).
+            const aceito = (file.type && mimesAceitos.includes(file.type)) || extAceita.test(file.name);
+            if (!aceito) {
+                window.showToast(`"${file.name}" não é aceito. Este álbum aceita apenas ${rotuloTipo}.`, 'warning');
+                return;
+            }
             if (file.size > MAX_BYTES) { window.showToast(`"${file.name}" excede o limite de 300 MB.`, 'warning'); return; }
 
             const item = { id: ++uid, file, status: 'queued', progress: 0, error: null, task: null };
@@ -747,10 +754,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="modal-body p-0 preview-modal-body">
                             <div class="preview-viewport" id="preview-viewport">
                                 <video id="preview-video-el" preload="metadata" playsinline
-                                       ${inicial === 'processado' ? 'controls' : ''}
-                                       style="${inicial === 'processado' ? '' : 'display:none'}"></video>
+                                       ${(inicial === 'processado' && !isImagem) ? 'controls' : ''}
+                                       style="${isImagem ? 'display:none' : ((inicial === 'processado') ? '' : 'display:none')}"></video>
                                 <img id="preview-img-el" alt=""
-                                     style="${inicial === 'original' && isImagem ? '' : 'display:none'}">
+                                     style="${isImagem ? '' : 'display:none'}">
+                                <!-- Spinner overlay: aparece durante reload da fonte de video -->
+                                <div class="preview-loading" id="preview-loading" style="display:none;">
+                                    <div class="spinner-border text-light" role="status"></div>
+                                    <div class="small text-light mt-2">Carregando...</div>
+                                </div>
                             </div>
                         </div>
                         <div class="modal-footer flex-wrap gap-2 justify-content-between">
@@ -808,11 +820,17 @@ document.addEventListener('DOMContentLoaded', () => {
         let mirrorOriginalDb = espelhado;
         let srcAtual = inicial;
 
-        // Se `usaImg` = true, renderizamos <img> (imagem crua no modo Original).
-        // Senão renderizamos <video>. Processado é SEMPRE MP4, mesmo p/ imagem.
-        const usaImgAgora = () => isImagem && srcAtual === 'original';
+        // Item de IMAGEM: sempre renderiza no <img>, seja processado ou original
+        // (ambos são JPG desde o refactor do pipeline de imagens). Antes tentava
+        // botar JPG no <video>, que não renderiza — e a rotação/mirror eram
+        // aplicados no elemento errado (invisível), dando a impressão de "não muda".
+        const usaImgAgora = () => isImagem;
 
         function elAtivo() { return usaImgAgora() ? img : video; }
+        const loadingOverlay = el.querySelector('#preview-loading');
+
+        function mostrarLoading() { if (loadingOverlay) loadingOverlay.style.display = ''; }
+        function esconderLoading() { if (loadingOverlay) loadingOverlay.style.display = 'none'; }
 
         function trocarFonte() {
             const url = `/painel/videos/${id}/stream/${srcAtual}`;
@@ -822,10 +840,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 video.removeAttribute('src'); video.load?.();
                 img.style.display = '';
                 img.src = url;
+                esconderLoading(); // <img> carrega rápido, sem spinner
             } else {
                 img.style.display = 'none';
                 img.removeAttribute('src');
                 video.style.display = '';
+                mostrarLoading(); // Spinner enquanto o video reload — evita tela preta silenciosa
                 video.src = url;
                 // Só mostra controls no processado (no original, mudanças de rotação
                 // manual complicam a UX — igual ao comportamento anterior)
@@ -870,8 +890,10 @@ document.addEventListener('DOMContentLoaded', () => {
             alvo.style.transform = `rotate(${rotVisual}deg) scaleX(${mirVisual ? -1 : 1})`;
         }
 
-        // Recomputa quando metadata do vídeo ou imagem carrega + em resize
-        video.addEventListener('loadedmetadata', fitMedia);
+        // Recomputa quando metadata do vídeo ou imagem carrega + em resize.
+        // Também esconde o spinner quando a nova fonte terminou de carregar.
+        video.addEventListener('loadedmetadata', () => { fitMedia(); esconderLoading(); });
+        video.addEventListener('error', esconderLoading);
         img.addEventListener('load', fitMedia);
         const onResize = () => fitMedia();
         window.addEventListener('resize', onResize);

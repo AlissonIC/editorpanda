@@ -307,8 +307,12 @@ class CheckoutController extends Controller
         // que quebrava o fluxo recém-checkout (URL assinada mas usuário não
         // autenticado ainda). Válidas por 2h — tempo suficiente pra baixar
         // todos, e pequeno o bastante pra não virar link permanente.
+        //
+        // Álbum de edição manual: NÃO gera download — entrega é externa,
+        // o comprador vê mensagem informando o prazo.
+        $edicaoManual = $pedido->album?->ehEdicaoManual() ?? false;
         $downloadUrls = [];
-        if ($pedido->status === 'pago') {
+        if ($pedido->status === 'pago' && ! $edicaoManual) {
             foreach ($pedido->itens as $item) {
                 if ($item->video?->status !== 'concluido') continue;
                 $downloadUrls[$item->video_id] = URL::temporarySignedRoute(
@@ -322,6 +326,7 @@ class CheckoutController extends Controller
         return view('pages.publico.checkout-confirmacao', [
             'pedido' => $pedido,
             'downloadUrls' => $downloadUrls,
+            'edicaoManual' => $edicaoManual,
         ]);
     }
 
