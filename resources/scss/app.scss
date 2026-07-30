@@ -479,6 +479,44 @@ body {
     border-radius: 0.75rem;
     padding: 1.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    // position:relative é required pra que .pv-checkout-overlay cubra apenas o
+    // card (não a viewport toda) via position:absolute + inset:0.
+    position: relative;
+}
+
+/* Overlay full-card: substitui visualmente o conteúdo do checkout quando há
+   itens já comprados pelo email. Ao contrário de um alert inline, força
+   a decisão do usuário (acessar conta OU limpar carrinho) antes de continuar. */
+.pv-checkout-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.97);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border-radius: inherit;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    animation: pv-fade-in 0.2s ease-out;
+    &.d-none { display: none !important; }
+}
+.pv-checkout-overlay-body {
+    width: 100%;
+    max-width: 320px;
+}
+.pv-checkout-overlay-icon {
+    text-align: center;
+    margin-bottom: 1rem;
+    i {
+        font-size: 3rem;
+        color: #f59e0b;
+    }
+}
+@keyframes pv-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 .pv-summary {
     background: #f7f8fa;

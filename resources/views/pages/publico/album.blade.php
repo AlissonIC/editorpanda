@@ -161,6 +161,28 @@
 
         <div class="col-lg-4">
             <div class="pv-checkout-card">
+                {{-- Overlay full-card: aparece sobre TUDO quando há itens já
+                     comprados pelo email. Substitui o antigo card interno. --}}
+                <div id="pv-pre-check" class="pv-checkout-overlay d-none">
+                    <div class="pv-checkout-overlay-body">
+                        <div class="pv-checkout-overlay-icon">
+                            <i class="bi bi-cart-check-fill"></i>
+                        </div>
+                        <h5 class="fw-bold text-center mb-2" id="pv-pre-check-title">—</h5>
+                        <p class="text-muted small text-center mb-4" id="pv-pre-check-msg">—</p>
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-dark" id="pv-pre-check-mail">
+                                <i class="bi bi-box-arrow-in-right me-1"></i>Acessar minha conta
+                            </button>
+                            <button type="button" class="btn btn-outline-dark" id="pv-pre-check-remove">
+                                <i class="bi bi-cart-x me-1"></i>Remover vídeos já comprados
+                            </button>
+                        </div>
+                        <button type="button" class="btn btn-link btn-sm w-100 mt-2 text-muted" id="pv-pre-check-close">
+                            Fechar
+                        </button>
+                    </div>
+                </div>
                 <h5 class="fw-bold mb-3">{{ $gratis ? 'Baixar vídeos' : 'Checkout' }}</h5>
                 <div class="pv-summary mb-3">
                     <div class="d-flex justify-content-between">
@@ -246,20 +268,6 @@
                                    spellcheck="false"
                                    required maxlength="180">
                             <div class="invalid-feedback">Informe um e-mail válido.</div>
-                        </div>
-
-                        {{-- Overlay de pré-checagem: mostra quando o email tem itens já comprados. --}}
-                        <div id="pv-pre-check" class="alert alert-warning small mb-3 d-none" role="status">
-                            <div class="fw-semibold mb-1" id="pv-pre-check-title">—</div>
-                            <div class="text-muted mb-2" id="pv-pre-check-msg">—</div>
-                            <div class="d-flex flex-wrap gap-2">
-                                <button type="button" class="btn btn-sm btn-dark" id="pv-pre-check-mail">
-                                    <i class="bi bi-envelope me-1"></i>Receber por e-mail
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-dark" id="pv-pre-check-remove">
-                                    <i class="bi bi-cart-x me-1"></i>Remover do carrinho
-                                </button>
-                            </div>
                         </div>
 
                         @if(! $gratis)

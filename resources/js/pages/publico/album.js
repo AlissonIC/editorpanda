@@ -465,12 +465,11 @@ document.addEventListener('DOMContentLoaded', () => {
         preCheckTitle.textContent = qtd === total
             ? `Todos os ${total} itens já foram comprados por este e-mail.`
             : `${qtd} de ${total} itens já foram comprados por este e-mail.`;
-        preCheckMsg.textContent = `Enviaremos os links de download para ${email} — clique abaixo. Ou remova os itens já comprados do carrinho para pagar só o restante.`;
-        // Se tudo comprado, "remover" zeraria o carrinho — só faz sentido "receber por e-mail".
-        preCheckRemoveBtn.classList.toggle('d-none', qtd === total);
+        preCheckMsg.textContent = qtd === total
+            ? `Enviamos os links de download por e-mail sempre que você acessa a conta com ${email}. Deseja acessar agora?`
+            : `Você pode acessar a conta com ${email} pra baixar os já comprados, ou remover eles do carrinho e pagar só pelos ${total - qtd} restantes.`;
+        // Ambos os botões sempre visíveis — usuário decide o caminho.
         preCheckBox.classList.remove('d-none');
-        // Foca o overlay pra usuário perceber (e leitores de tela anunciarem).
-        preCheckBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     async function verificarPreCompra() {
@@ -551,6 +550,11 @@ document.addEventListener('DOMContentLoaded', () => {
         refresh();
         esconderPreCheck();
         window.showToast?.(`${jaComprados.length} item(s) removido(s) do carrinho.`, 'info');
+    });
+
+    // Fechar overlay — não altera estado, só oculta pra usuário reexaminar
+    document.getElementById('pv-pre-check-close')?.addEventListener('click', () => {
+        esconderPreCheck();
     });
 
     // ==================== Fluxo de pagamento inline (sem modal) ====================

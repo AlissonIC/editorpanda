@@ -111,7 +111,7 @@ class VideoProcessor
             $outputPath = $tempDir . DIRECTORY_SEPARATOR . 'output.' . $outExt;
 
             $cmd = $isImagem
-                ? $this->buildImageCommand($inputPath, $outputPath, $logoLocal, $config)
+                ? $this->buildImageCommand($inputPath, $outputPath, $logoLocal, $meta, $config)
                 : $this->buildCommand($inputPath, $outputPath, $logoLocal, $meta, $config);
             $this->runFFmpeg($cmd);
 
@@ -428,18 +428,31 @@ class VideoProcessor
     /**
      * Constrói o comando FFmpeg para processamento de IMAGEM (single frame → JPG).
      *
-     * Mesmos overlays da versão vídeo (cover-crop 1080x1920, gradiente, logo),
-     * mas sem loop/duração/áudio. Não pode reutilizar buildCommand porque este
-     * assume um stream de vídeo e emite libx264+aac.
+     * PRESERVA dimensões e proporção originais — só aplica rotação/espelhamento
+     * (transformações explícitas do usuário) e sobrepõe gradiente/logo. Nada
+     * de scale/crop automático. Isso significa que fotos gigantes (ex: 6000x4000)
+     * saem no mesmo tamanho — se virarem problema de storage, aí decidimos
+     * cap por regra separada, mas o processador respeita o input.
      */
-    private function buildImageCommand(string $input, string $output, ?string $logo, array $config): array
+    private function buildImageCommand(string $input, string $output, ?string $logo, array $meta, array $config): array
     {
-        $W = self::OUT_WIDTH;
-        $H = self::OUT_HEIGHT;
-
         $espelhado = ! empty($config['espelhado']);
         $rotacao = (int) ($config['rotacao'] ?? 0);
 
+        // Dimensões pós-rotação (transpose 90/270 troca W e H).
+        $origW = (int) ($meta['width'] ?? 0);
+        $origH = (int) ($meta['height'] ?? 0);
+        if ($origW <= 0 || $origH <= 0) {
+            // Probe falhou — usa fallback conservador (não deveria acontecer).
+            $origW = self::OUT_WIDTH;
+            $origH = self::OUT_HEIGHT;
+        }
+        $W = in_array($rotacao, [90, 270], true) ? $origH : $origW;
+        $H = in_array($rotacao, [90, 270], true) ? $origW : $origH;
+
+        // Sem scale/crop — só rotate/mirror se pedido. Se nenhum, `null` é
+        // filter pass-through do ffmpeg (não altera nada, mas dá um label pro
+        // filter_complex referenciar).
         $preFilters = '';
         if ($espelhado) $preFilters .= 'hflip,';
         $preFilters .= match ($rotacao) {
@@ -448,14 +461,16 @@ class VideoProcessor
             270 => 'transpose=2,',
             default => '',
         };
+        $preFilters = rtrim($preFilters, ',');
+        if ($preFilters === '') $preFilters = 'null';
 
-        $vFilter = "{$preFilters}scale={$W}:{$H}:force_original_aspect_ratio=increase,crop={$W}:{$H},setsar=1";
-        $parts = ["[0:v]{$vFilter}[v0]"];
+        $parts = ["[0:v]{$preFilters}[v0]"];
         $lastLabel = '[v0]';
 
+        // Gradiente cobre 1/3 da altura ORIGINAL — proporcional à imagem.
         if ($config['gradiente_habilitado']) {
             $pos = $config['logo_posicao'];
-            $gradH = intdiv($H, 3);
+            $gradH = max(1, intdiv($H, 3));
             $alphaMax = 200;
 
             if (str_starts_with($pos, 'top')) {
@@ -477,7 +492,8 @@ class VideoProcessor
         if ($logo) {
             $inputs[] = '-i';
             $inputs[] = $logo;
-            $logoW = (int) ($W * $config['logo_escala']);
+            // Escala do logo é proporcional à largura da imagem original.
+            $logoW = max(1, (int) round($W * $config['logo_escala']));
             $parts[] = "[1:v]scale={$logoW}:-1[logo]";
             [$x, $y2] = $this->positionCoords($config['logo_posicao']);
             $parts[] = "{$lastLabel}[logo]overlay=x={$x}:y={$y2}[vout]";
@@ -543,13 +559,33 @@ class VideoProcessor
     }
 
     /**
-     * Versão IMAGEM do preview: downscale + watermark tiled, output JPG.
-     * Simétrica a buildWatermarkedPreview (que faz o mesmo pra vídeo/mp4).
+     * Versão IMAGEM do preview: downscale (max 1080px na maior dimensão,
+     * preservando aspect) + watermark tiled, output JPG.
+     *
+     * O preview é sempre menor que o processado clean pra economizar
+     * bandwidth público. A watermark PNG é gerada no tamanho EXATO do
+     * preview pra evitar distorção do padrão diagonal.
      */
     private function buildWatermarkedPreviewImagem(string $cleanInput, string $previewOutput): void
     {
-        $previewW = 540;
-        $previewH = 960;
+        $meta = $this->probe($cleanInput);
+        $inW = max(1, (int) ($meta['width'] ?? 0));
+        $inH = max(1, (int) ($meta['height'] ?? 0));
+
+        // Cap na maior dimensão. Imagem menor que 1080 fica no tamanho original.
+        $maxSide = 1080;
+        if (max($inW, $inH) > $maxSide) {
+            if ($inW >= $inH) {
+                $previewW = $maxSide;
+                $previewH = max(1, (int) round($maxSide * $inH / $inW));
+            } else {
+                $previewH = $maxSide;
+                $previewW = max(1, (int) round($maxSide * $inW / $inH));
+            }
+        } else {
+            $previewW = $inW;
+            $previewH = $inH;
+        }
 
         $watermarkPng = dirname($previewOutput) . DIRECTORY_SEPARATOR . 'watermark-tiled.png';
         $this->generateDiagonalWatermarkPng($watermarkPng, $previewW, $previewH);
