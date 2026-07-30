@@ -231,6 +231,27 @@
                     </div>
                 </div>
                 <h5 class="fw-bold mb-3">{{ $gratis ? 'Baixar vídeos' : 'Checkout' }}</h5>
+
+                @unless($gratis)
+                    {{-- Cupom colapsável — posicionado ANTES do summary pra visibilidade
+                         (usuário costuma procurar antes de ver o total). Centralizado. --}}
+                    <div class="text-center mb-2">
+                        <a class="small text-muted text-decoration-none" data-bs-toggle="collapse"
+                           href="#pv-cupom-collapse" role="button">
+                            <i class="bi bi-tag me-1"></i>Tem cupom de desconto?
+                        </a>
+                    </div>
+                    <div class="collapse mb-3" id="pv-cupom-collapse">
+                        <input type="text" name="codigo_cupom" id="pv-form-cupom"
+                               class="form-control text-uppercase"
+                               autocapitalize="characters"
+                               autocomplete="off"
+                               spellcheck="false"
+                               placeholder="Digite o código" maxlength="60"
+                               form="pv-checkout-form">
+                    </div>
+                @endunless
+
                 <div class="pv-summary mb-3">
                     <div class="d-flex justify-content-between">
                         <span>Vídeos selecionados</span>
@@ -295,13 +316,14 @@
                                 <div class="invalid-feedback">Informe seu nome completo.</div>
                             </div>
                             <div class="col-sm-5">
-                                <label class="form-label small" for="pv-form-whats">WhatsApp <span class="text-muted">(opcional)</span></label>
+                                <label class="form-label small" for="pv-form-whats">WhatsApp</label>
                                 <input type="tel" name="whatsapp" id="pv-form-whats"
                                        class="form-control"
                                        autocomplete="tel-national"
                                        inputmode="tel"
                                        placeholder="(11) 99999-9999"
-                                       maxlength="20">
+                                       required minlength="10" maxlength="20">
+                                <div class="invalid-feedback">Informe seu WhatsApp com DDD.</div>
                             </div>
                         </div>
 
@@ -345,30 +367,11 @@
                                  Tem seu próprio botão de "Pagar" — nosso "Finalizar compra"
                                  fica escondido quando Cartão está ativo (evita duplo submit). --}}
                             <div id="pv-bricks-container" class="mb-3" style="display:none;"></div>
-
-                            {{-- Cupom colapsável — reduz ruído visual. --}}
-                            <div class="mb-3">
-                                <a class="small text-muted text-decoration-none" data-bs-toggle="collapse"
-                                   href="#pv-cupom-collapse" role="button">
-                                    <i class="bi bi-tag me-1"></i>Tem cupom de desconto?
-                                </a>
-                                <div class="collapse mt-2" id="pv-cupom-collapse">
-                                    <input type="text" name="codigo_cupom" id="pv-form-cupom"
-                                           class="form-control text-uppercase"
-                                           autocapitalize="characters"
-                                           autocomplete="off"
-                                           spellcheck="false"
-                                           placeholder="Digite o código" maxlength="60">
-                                </div>
-                            </div>
                         @endif
 
                         <button type="submit" class="btn btn-dark w-100 py-2 fw-semibold" id="pv-checkout-btn" disabled>
                             {{ $gratis ? 'Baixar grátis' : 'Finalizar compra' }}
                         </button>
-                        <div class="text-center small text-muted mt-2">
-                            <a href="{{ route('publico.acesso') }}">Já comprei — acessar meus vídeos</a>
-                        </div>
                     </form>
                 </div>
 

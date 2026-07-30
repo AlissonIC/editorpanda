@@ -596,6 +596,54 @@ body {
     }
 }
 
+/* Mini bar chart do relatório do servidor — 7 barras verticais responsivas.
+   Sem lib externa (Chart.js seria exagero pra 7 pontos). */
+.pv-mini-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.4rem;
+    height: 140px;
+    padding: 0.25rem 0;
+}
+.pv-mini-chart-col {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-end;
+    min-width: 0;
+}
+.pv-mini-chart-bar {
+    background: linear-gradient(180deg, #7367f0 0%, #a29bfe 100%);
+    border-radius: 4px 4px 0 0;
+    position: relative;
+    min-height: 4px;
+    transition: height .3s ease;
+}
+.pv-mini-chart-val {
+    position: absolute;
+    top: -1.1rem;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #4b5563;
+}
+.pv-mini-chart-label {
+    text-align: center;
+    font-size: 0.65rem;
+    color: #6b7280;
+    margin-top: 0.25rem;
+}
+
+/* MP CardPayment Bricks — remove padding do form interno.
+   O Bricks é Svelte-scoped (classes tipo .svelte-XXX hash), então miramos
+   qualquer <form> dentro do container do brick — funciona independente
+   da versão do SDK. Backup do onReady() em JS também remove via inline. */
+#cardPaymentBrick_container form {
+    padding: 0 !important;
+}
+
 /* ========================================================
    EVENTO — capa + mini-card de álbum na página de edição
    ======================================================== */

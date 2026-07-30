@@ -532,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Validação inline: exibe .invalid-feedback ao vivo em vez de esperar o submit
-    ['nome', 'email'].forEach((n) => {
+    ['nome', 'email', 'whatsapp'].forEach((n) => {
         const el = form.querySelector(`[name=${n}]`);
         el?.addEventListener('blur', () => el.classList.toggle('is-invalid', !el.checkValidity()));
         el?.addEventListener('input', () => el.classList.remove('is-invalid'));
@@ -790,6 +790,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await mountCardBricks('pv-bricks-container', {
             publicKey: pedidoData.public_key,
             amount: pedidoData.total,
+            payerEmail: form.querySelector('[name=email]')?.value.trim() || undefined,
             onSubmit: (tokenPayload) => processarCartao(pedidoData, tokenPayload),
         });
     }
@@ -813,6 +814,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await mountCardBricks('pv-bricks-container', {
                     publicKey: pedidoCriado.public_key,
                     amount: pedidoCriado.total,
+                    payerEmail: form.querySelector('[name=email]')?.value.trim() || undefined,
                     onSubmit: (tp) => processarCartao(pedidoCriado, tp),
                 });
             } else {

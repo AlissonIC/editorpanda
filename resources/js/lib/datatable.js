@@ -26,6 +26,7 @@ const ptBR = {
  * Barra de filtros customizada — renderizada acima da tabela.
  * Espera um objeto:
  *   {
+ *     defaults: { periodo_dias: '90' },  // aplicados no state inicial e refletidos nos selects
  *     search: true | { placeholder: '...' },
  *     selects: [
  *       { name: 'status', label: 'Status', width: 180, options: [
@@ -39,7 +40,9 @@ const ptBR = {
  * Retorna refs para o caller ler `state.search` / `state.filters`.
  */
 function buildFilterBar(tableEl, config, onChange) {
-    const state = { search: '', filters: {} };
+    // Defaults viram parte do state DESDE O INÍCIO — assim já vão na primeira
+    // request de dados, sem esperar o usuário mexer.
+    const state = { search: '', filters: { ...(config.defaults || {}) } };
     const wrap = document.createElement('div');
     wrap.className = 'panda-filter-bar';
 
@@ -76,18 +79,28 @@ function buildFilterBar(tableEl, config, onChange) {
 
     // -------- Selects --------
     (config.selects || []).forEach((s) => {
+        // Se há default pra esse filtro, pré-seleciona no dropdown
+        const defaultValue = config.defaults?.[s.name];
         const selectWrap = document.createElement('div');
         selectWrap.className = 'panda-filter-select';
         selectWrap.style.minWidth = (s.width || 160) + 'px';
         selectWrap.innerHTML = `
             <label>${s.label}</label>
             <select class="form-select form-select-sm">
-                ${(s.options || []).map(o => `<option value="${o.value ?? ''}">${o.label}</option>`).join('')}
+                ${(s.options || []).map(o => {
+                    const val = o.value ?? '';
+                    const sel = String(val) === String(defaultValue ?? '') ? 'selected' : '';
+                    return `<option value="${val}" ${sel}>${o.label}</option>`;
+                }).join('')}
             </select>
         `;
         wrap.appendChild(selectWrap);
 
         const select = selectWrap.querySelector('select');
+        // Marca visualmente como "ativo" se tem valor default não-vazio
+        if (defaultValue !== undefined && defaultValue !== '') {
+            selectWrap.classList.add('is-active');
+        }
         select.addEventListener('change', () => {
             state.filters[s.name] = select.value;
             selectWrap.classList.toggle('is-active', !!select.value);
@@ -95,7 +108,7 @@ function buildFilterBar(tableEl, config, onChange) {
         });
     });
 
-    // -------- Limpar tudo --------
+    // -------- Limpar tudo — volta pros defaults (não pra vazio) --------
     if ((config.selects || []).length || config.search !== false) {
         const clearAll = document.createElement('button');
         clearAll.type = 'button';
@@ -105,13 +118,15 @@ function buildFilterBar(tableEl, config, onChange) {
         clearAll.addEventListener('click', () => {
             const search = wrap.querySelector('.panda-filter-search input');
             if (search) { search.value = ''; wrap.querySelector('.panda-filter-search').classList.remove('has-value'); }
-            wrap.querySelectorAll('.panda-filter-select').forEach((sw) => {
+            wrap.querySelectorAll('.panda-filter-select').forEach((sw, idx) => {
                 const sel = sw.querySelector('select');
-                sel.selectedIndex = 0;
-                sw.classList.remove('is-active');
+                const filterName = (config.selects || [])[idx]?.name;
+                const defVal = filterName ? (config.defaults?.[filterName] ?? '') : '';
+                sel.value = defVal;
+                sw.classList.toggle('is-active', !!defVal);
             });
             state.search = '';
-            state.filters = {};
+            state.filters = { ...(config.defaults || {}) };
             onChange(state);
         });
     }

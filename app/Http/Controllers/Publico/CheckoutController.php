@@ -78,7 +78,7 @@ class CheckoutController extends Controller
         $data = $request->validate([
             'nome' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:180'],
-            'whatsapp' => ['nullable', 'string', 'max:20'],
+            'whatsapp' => ['required', 'string', 'min:10', 'max:20'],
             'video_ids' => ['required', 'array', 'min:1', 'max:200'],
             'video_ids.*' => ['integer'],
             'codigo_cupom' => ['nullable', 'string', 'max:60'],

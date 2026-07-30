@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Despesa;
 use App\Models\Pedido;
 use App\Models\Saque;
 use App\Models\User;
@@ -20,7 +21,24 @@ class FinanceiroController extends Controller
         $totalSaquesPagos = (float) Saque::where('status', 'pago')->sum('valor');
         $totalSaquesPendentes = (float) Saque::where('status', 'solicitado')->sum('valor');
 
-        return view('pages.painel.financeiro', compact('totalPago', 'totalSaquesPagos', 'totalSaquesPendentes'));
+        // Despesas: totais operacionais pra dar visão custo × receita
+        $gastosMes = (float) Despesa::whereBetween('data_gasto', [now()->startOfMonth(), now()->endOfMonth()])
+            ->sum('valor');
+        // Somatório mensalizado dos recorrentes (semanal→~4.3, mensal→1, anual→/12)
+        $gastosRecorrentesMensalizados = (float) Despesa::where('recorrente', true)->get()
+            ->sum(fn ($d) => $d->valorMensalizado());
+
+        // Lista de vendedores (usuários não-admin) pra popular o filtro
+        // das tabelas de vendas/saques. Ordenado por nome pra facilitar busca visual.
+        $vendedores = User::where('role', '!=', 'admin')
+            ->orderBy('nome')
+            ->get(['id', 'nome']);
+
+        return view('pages.painel.financeiro', compact(
+            'totalPago', 'totalSaquesPagos', 'totalSaquesPendentes',
+            'gastosMes', 'gastosRecorrentesMensalizados',
+            'vendedores',
+        ));
     }
 
     public function vendasData(Request $request): JsonResponse
@@ -31,6 +49,14 @@ class FinanceiroController extends Controller
         $filters = $request->input('filters', []);
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
+        }
+        if (! empty($filters['user_id'])) {
+            $query->where('user_id', (int) $filters['user_id']);
+        }
+        // periodo_dias = 0 significa "todo tempo"; qualquer outro valor = últimos N dias
+        $dias = (int) ($filters['periodo_dias'] ?? 0);
+        if ($dias > 0) {
+            $query->where('created_at', '>=', now()->subDays($dias));
         }
 
         return DataTables::eloquent($query)
@@ -51,6 +77,13 @@ class FinanceiroController extends Controller
         $filters = $request->input('filters', []);
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
+        }
+        if (! empty($filters['user_id'])) {
+            $query->where('user_id', (int) $filters['user_id']);
+        }
+        $dias = (int) ($filters['periodo_dias'] ?? 0);
+        if ($dias > 0) {
+            $query->where('solicitado_em', '>=', now()->subDays($dias));
         }
 
         return DataTables::eloquent($query)

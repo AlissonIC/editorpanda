@@ -240,6 +240,15 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
         Route::post('financeiro/saques/{saque}/aprovar', [Admin\FinanceiroController::class, 'aprovarSaque'])->name('financeiro.saques.aprovar');
         Route::post('financeiro/saques/{saque}/recusar', [Admin\FinanceiroController::class, 'recusarSaque'])->name('financeiro.saques.recusar');
 
+        Route::get('servidor', [Admin\ServidorController::class, 'index'])->name('servidor.index');
+
+        // Despesas — CRUD dentro do financeiro admin
+        Route::get('despesas/data', [Admin\DespesasController::class, 'data'])->name('despesas.data');
+        Route::get('despesas/{despesa}', [Admin\DespesasController::class, 'show'])->name('despesas.show');
+        Route::post('despesas', [Admin\DespesasController::class, 'store'])->name('despesas.store');
+        Route::put('despesas/{despesa}', [Admin\DespesasController::class, 'update'])->name('despesas.update');
+        Route::delete('despesas/{despesa}', [Admin\DespesasController::class, 'destroy'])->name('despesas.destroy');
+
         Route::get('processamento', [Admin\ProcessamentoController::class, 'index'])->name('processamento.index');
         Route::get('processamento/data', [Admin\ProcessamentoController::class, 'data'])->name('processamento.data');
         Route::post('processamento/{video}/reprocessar', [Admin\ProcessamentoController::class, 'reprocessar'])->name('processamento.reprocessar');

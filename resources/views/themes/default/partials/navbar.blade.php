@@ -21,6 +21,7 @@
                 @if($isAdmin)
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.usuarios') ? 'active' : '' }}" href="{{ route('painel.usuarios.index') }}">Usuários</a></li>
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.financeiro') ? 'active' : '' }}" href="{{ route('painel.financeiro.index') }}">Financeiro</a></li>
+                    <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.servidor') ? 'active' : '' }}" href="{{ route('painel.servidor.index') }}">Servidor</a></li>
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.processamento') ? 'active' : '' }}" href="{{ route('painel.processamento.index') }}">Processamento</a></li>
                     <li class="nav-item"><a class="nav-link {{ str_starts_with($rota, 'painel.logs') ? 'active' : '' }}" href="{{ route('painel.logs.index') }}">Logs</a></li>
                 @endif

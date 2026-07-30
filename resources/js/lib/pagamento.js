@@ -45,7 +45,7 @@ function carregarMpSdk() {
  *    Deve retornar uma Promise — se rejeitar, o Brick mantém o form editável.
  *  - onError(err): erro de validação do Brick.
  */
-export async function mountCardBricks(containerId, { publicKey, amount, onSubmit, onError }) {
+export async function mountCardBricks(containerId, { publicKey, amount, payerEmail, onSubmit, onError }) {
     await carregarMpSdk();
     if (!mpInstance) {
         mpInstance = new window.MercadoPago(publicKey, { locale: 'pt-BR' });
@@ -56,16 +56,53 @@ export async function mountCardBricks(containerId, { publicKey, amount, onSubmit
 
     const bricks = mpInstance.bricks();
     brickController = await bricks.create('cardPayment', containerId, {
-        initialization: { amount },
+        initialization: {
+            amount,
+            // Pré-preenche email no Bricks pra que ele NÃO pergunte de novo —
+            // o email já veio do form principal (evita input duplicado no fluxo).
+            ...(payerEmail ? { payer: { email: payerEmail } } : {}),
+        },
         customization: {
             paymentMethods: {
                 minInstallments: 1,
                 maxInstallments: 12,
             },
-            visual: { style: { theme: 'default' } },
+            visual: {
+                hideFormTitle: true, // Remove "Preencha seus dados"
+                style: { theme: 'default' },
+            },
         },
         callbacks: {
-            onReady: () => {},
+            onReady: () => {
+                // Backup: se hideFormTitle/pré-fill do email não pegar (algumas
+                // versões do Bricks ignoram), removemos manualmente via DOM.
+                const container = document.getElementById(containerId);
+                if (!container) return;
+
+                // Espera um tick pro Bricks terminar de mountar internamente
+                setTimeout(() => {
+                    // 1) Remove padding dos <form> internos do Bricks (Svelte
+                    //    aplica padding padrão que fica esquisito quando embed).
+                    container.querySelectorAll('form').forEach((f) => {
+                        f.style.padding = '0';
+                    });
+
+                    // 2) Esconde qualquer input de email do Bricks (email
+                    //    já foi pre-fill via initialization.payer.email).
+                    container.querySelectorAll('input[type="email"]').forEach((input) => {
+                        const wrapper = acharWrapper(input, container);
+                        if (wrapper) wrapper.style.display = 'none';
+                    });
+
+                    // 3) Esconde título "Preencha seus dados" se hideFormTitle não pegou.
+                    container.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="title"], [class*="header"]').forEach((h) => {
+                        const txt = (h.textContent || '').trim().toLowerCase();
+                        if (/preencha (seus )?dados/.test(txt) || txt === 'seus dados' || txt === 'dados') {
+                            h.style.display = 'none';
+                        }
+                    });
+                }, 100);
+            },
             onSubmit: async (cardData) => {
                 const payload = {
                     token: cardData.formData.token,
@@ -82,6 +119,25 @@ export async function mountCardBricks(containerId, { publicKey, amount, onSubmit
         },
     });
     return brickController;
+}
+
+/**
+ * Sobe na árvore procurando o wrapper "razoável" do input (row/field-group)
+ * pra esconder junto com o label. Para se o container do Bricks for atingido
+ * (não podemos esconder ele todo).
+ */
+function acharWrapper(input, container) {
+    let el = input.parentElement;
+    for (let i = 0; i < 6 && el && el !== container; i++) {
+        // Heurística: para em elementos que parecem ser um "campo completo"
+        const cls = el.className?.toString() || '';
+        if (/field|form-row|form-group|control|input-container/i.test(cls)) {
+            return el;
+        }
+        el = el.parentElement;
+    }
+    // Fallback: sobe 2 níveis (input → wrapper → row-provável)
+    return input.parentElement?.parentElement || input.parentElement;
 }
 
 export async function unmountCardBricks() {
