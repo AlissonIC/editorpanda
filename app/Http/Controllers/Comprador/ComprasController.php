@@ -150,7 +150,9 @@ class ComprasController extends Controller
             'id' => $merge->id,
             'slug' => $merge->slug,
             'status' => $merge->status,
-            'erro_msg' => $merge->erro_msg,
+            'erro_msg' => $merge->status === VideoMerge::STATUS_FALHOU
+                ? VideoMerge::ERRO_PUBLICO
+                : null,
             'tamanho_bytes' => $merge->tamanho_bytes,
             'download_url' => $merge->status === VideoMerge::STATUS_CONCLUIDO
                 ? route('publico.merge.download', $merge)

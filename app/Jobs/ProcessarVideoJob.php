@@ -61,8 +61,14 @@ class ProcessarVideoJob implements ShouldQueue
 
         $inicio = microtime(true);
 
+        $inicio = microtime(true);
+
         try {
             $processor->process($video);
+
+            // Tempo REAL do pipeline (sem espera de fila nem upload) — base das
+            // métricas de custo no painel do servidor.
+            $video->forceFill(['processamento_ms' => (int) round((microtime(true) - $inicio) * 1000)])->saveQuietly();
 
             LogProcessamento::info('video.concluido', 'Vídeo processado com sucesso', [
                 'video_id' => $video->id,

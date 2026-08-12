@@ -40,7 +40,12 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // PRECISA ser maior que o timeout do job mais longo (ProcessarVideoJob
+            // e MesclarVideosJob: 1920s). Com os 90s do default do Laravel, todo
+            // processamento acima de 1min30 era considerado travado e devolvido à
+            // fila: outro worker pegava o mesmo job, estourava MaxAttemptsExceeded
+            // e marcava o vídeo como falhou — com o primeiro worker ainda rodando.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 1980),
             'after_commit' => false,
         ],
 

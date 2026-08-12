@@ -73,6 +73,15 @@ FFPROBE_BIN=C:\ffmpeg\bin\ffprobe.exe
 O worker do Laravel é o próprio `queue:work`. Ele já lê da conexão `database`
 (configurada em `QUEUE_CONNECTION=database` no `.env`).
 
+> **`retry_after` tem que ser maior que o timeout do job.**
+> `config/queue.php` usa `DB_QUEUE_RETRY_AFTER` (default 1980s) contra os 1920s
+> de timeout do `ProcessarVideoJob`. Se `retry_after` ficar menor — o default do
+> Laravel é **90s** — a fila entende que qualquer encode mais longo travou,
+> entrega o mesmo job a outro worker e o vídeo morre com
+> `MaxAttemptsExceededException` + "worker pode ter crashado", com o primeiro
+> worker ainda processando normalmente.
+> Depois de alterar em produção: `php artisan config:clear`.
+
 **Um worker**:
 ```bash
 php artisan queue:work --timeout=1830 --tries=1

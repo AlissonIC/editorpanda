@@ -16,6 +16,19 @@ class Video extends Model
     public const STATUS_CONCLUIDO = 'concluido';
     public const STATUS_FALHOU = 'falhou';
 
+    /**
+     * O que o fotógrafo vê quando o processamento falha.
+     *
+     * `erro_msg` guarda o texto técnico (stack do ffmpeg, exceção da fila) porque
+     * o admin precisa dele em /painel/processamento e /painel/logs — mas para
+     * quem enviou o vídeo isso é ruído: não ajuda a decidir nada e ainda expõe
+     * caminho de arquivo e nome de classe interna.
+     */
+    public const ERRO_PUBLICO = 'Falha ao processar o vídeo. Tente enviar novamente.';
+
+    /** Mesma ideia, para falha na finalização do upload (S3/concat local). */
+    public const ERRO_PUBLICO_UPLOAD = 'Falha ao enviar o vídeo. Tente novamente.';
+
     private const IMAGEM_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
 
     /**
@@ -55,11 +68,14 @@ class Video extends Model
         'status',
         'erro_msg',
         'tamanho_bytes',
+        'tamanho_original_bytes',
+        'otimizacao_origem',
         'duracao_segundos',
         'rotacao',
         'espelhado',
         'otimizar_servidor',
         'processado_em',
+        'processamento_ms',
     ];
 
     protected function casts(): array
@@ -69,6 +85,8 @@ class Video extends Model
             'upload_iniciado_em' => 'datetime',
             'parts_json' => 'array',
             'tamanho_bytes' => 'integer',
+            'tamanho_original_bytes' => 'integer',
+            'processamento_ms' => 'integer',
             'chunk_size' => 'integer',
             'total_parts' => 'integer',
             'duracao_segundos' => 'integer',

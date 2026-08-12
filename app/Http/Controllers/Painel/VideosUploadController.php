@@ -51,6 +51,9 @@ class VideosUploadController extends Controller
             // (Safari do iOS não tem captureStream, aba em segundo plano, etc.),
             // ele manda true aqui e o processamento normaliza o original.
             'otimizar_servidor' => ['sometimes', 'boolean'],
+            // Tamanho antes da redução no navegador — alimenta a métrica de
+            // economia no painel do servidor. Só informativo.
+            'tamanho_original_bytes' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ]);
 
         // Álbum define se aceita vídeo OU imagem (exclusivo — evita misturar
@@ -122,6 +125,8 @@ class VideosUploadController extends Controller
                 'rotacao' => (int) ($album->rotacao_padrao ?? 0),
                 'espelhado' => (bool) ($album->espelhado_padrao ?? false),
                 'otimizar_servidor' => (bool) ($data['otimizar_servidor'] ?? false),
+                'tamanho_original_bytes' => $data['tamanho_original_bytes'] ?? null,
+                'otimizacao_origem' => ! empty($data['tamanho_original_bytes']) ? 'navegador' : null,
             ]);
 
             // Nome padronizado (img_/vid_{id}.ext) — depende do ID auto-increment,
@@ -361,7 +366,8 @@ class VideosUploadController extends Controller
             } catch (\Throwable $e) {
                 Log::error('Falha CompleteMultipartUpload', ['video_id' => $video->id, 'msg' => $e->getMessage()]);
                 $this->finalizarComoFalhado($video, 'S3: ' . $e->getMessage());
-                return response()->json(['message' => 'Falha ao finalizar no S3: ' . $e->getMessage()], 500);
+                // Detalhe do S3 (bucket, key, código AWS) fica no log — ver Log::error acima.
+                return response()->json(['message' => Video::ERRO_PUBLICO_UPLOAD], 500);
             }
         } else {
             // Local: exige TODAS as partes e concatena em ordem em stream.
@@ -401,7 +407,8 @@ class VideosUploadController extends Controller
             } catch (\Throwable $e) {
                 Log::error('Falha ao concatenar partes locais', ['video_id' => $video->id, 'msg' => $e->getMessage()]);
                 $this->finalizarComoFalhado($video, 'Local: ' . $e->getMessage());
-                return response()->json(['message' => 'Falha ao montar arquivo final: ' . $e->getMessage()], 500);
+                // Idem: caminho de disco e erro de I/O não ajudam quem enviou.
+                return response()->json(['message' => Video::ERRO_PUBLICO_UPLOAD], 500);
             }
         }
 
@@ -738,7 +745,9 @@ class VideosUploadController extends Controller
             ->map(fn ($v) => [
                 'id' => (int) $v->id,
                 'status' => $v->status,
-                'erro_msg' => $v->erro_msg,
+                // Genérico de propósito: o técnico fica no banco pro admin
+                // (ver Video::ERRO_PUBLICO).
+                'erro_msg' => $v->status === Video::STATUS_FALHOU ? Video::ERRO_PUBLICO : null,
                 // O processamento pode encolher o original (normalização de 4K),
                 // e sem isto o card seguiria mostrando o peso do upload até um F5.
                 'tamanho_bytes' => (int) $v->tamanho_bytes,

@@ -16,6 +16,9 @@ class VideoMerge extends Model
     public const STATUS_CONCLUIDO = 'concluido';
     public const STATUS_FALHOU = 'falhou';
 
+    /** Texto exibido a quem pediu a mescla; o técnico fica em erro_msg pro admin. */
+    public const ERRO_PUBLICO = 'Não foi possível gerar o arquivo. Tente novamente.';
+
     /**
      * Janela de retenção do arquivo concatenado, em dias.
      *

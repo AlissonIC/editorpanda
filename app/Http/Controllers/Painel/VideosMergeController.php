@@ -67,7 +67,9 @@ class VideosMergeController extends Controller
             'slug' => $merge->slug,
             'status' => $merge->status,
             'tamanho_bytes' => $merge->tamanho_bytes,
-            'erro_msg' => $merge->erro_msg,
+            'erro_msg' => $merge->status === VideoMerge::STATUS_FALHOU
+                ? VideoMerge::ERRO_PUBLICO
+                : null,
             'iniciado_em' => $merge->iniciado_em,
             'concluido_em' => $merge->concluido_em,
             'download_url' => $merge->status === VideoMerge::STATUS_CONCLUIDO

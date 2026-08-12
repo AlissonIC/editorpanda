@@ -195,6 +195,81 @@
     </div>
 </div>
 
+{{-- ===== Otimização de vídeos ===== --}}
+<h6 class="fw-bold text-uppercase small text-muted mb-2">Otimização de vídeos</h6>
+<div class="row g-3 mb-4">
+    <div class="col-md-5">
+        <div class="panda-card h-100">
+            <div class="d-flex align-items-start gap-3">
+                <div style="font-size:2rem; color:#22c55e;"><i class="bi bi-arrows-angle-contract"></i></div>
+                <div class="flex-grow-1">
+                    <div class="small text-muted mb-1">Economia de armazenamento</div>
+                    <div class="h4 fw-bold mb-1">
+                        {{ number_format($otimizacao['gb_economizados'], 2, ',', '.') }} GB
+                        @if($otimizacao['percentual'] > 0)
+                            <span class="text-success fw-normal fs-6">−{{ number_format($otimizacao['percentual'], 1, ',', '.') }}%</span>
+                        @endif
+                    </div>
+                    <div class="small text-muted">
+                        @if($otimizacao['otimizados'] > 0)
+                            {{ $otimizacao['otimizados'] }} de {{ $otimizacao['total'] }} vídeos reduzidos ·
+                            sem otimizar ocupariam {{ number_format($otimizacao['gb_sem_otimizacao'], 2, ',', '.') }} GB
+                        @else
+                            Nenhum vídeo reduzido ainda. A conta começa nos próximos envios.
+                        @endif
+                    </div>
+                    @if($otimizacao['otimizados'] > 0)
+                        <div class="small text-muted mt-2">
+                            <i class="bi bi-laptop me-1"></i>{{ $otimizacao['por_navegador'] }} no navegador
+                            <span class="mx-1">·</span>
+                            <i class="bi bi-hdd-network me-1"></i>{{ $otimizacao['por_servidor'] }} no servidor
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="panda-card h-100">
+            <div class="small text-muted mb-2">
+                <i class="bi bi-cpu me-1"></i>Reflexo no processamento — tempo médio real do pipeline
+            </div>
+
+            @php
+                $grupos = [
+                    ['rotulo' => 'Já chegou reduzido (navegador)', 'seg' => $otimizacao['seg_medio_navegador'], 'n' => $otimizacao['amostra_navegador'], 'cor' => 'success'],
+                    ['rotulo' => 'Normalizado no servidor', 'seg' => $otimizacao['seg_medio_servidor'], 'n' => $otimizacao['amostra_servidor'], 'cor' => 'warning'],
+                    ['rotulo' => 'Sem otimização', 'seg' => $otimizacao['seg_medio_sem_otimizacao'], 'n' => $otimizacao['amostra_sem_otimizacao'], 'cor' => 'secondary'],
+                ];
+                $comAmostra = array_filter($grupos, fn ($g) => $g['n'] > 0);
+            @endphp
+
+            @forelse($comAmostra as $g)
+                <div class="d-flex justify-content-between align-items-baseline py-1">
+                    <span class="small">
+                        <span class="badge bg-{{ $g['cor'] }}-subtle text-{{ $g['cor'] }}-emphasis">{{ $g['n'] }}</span>
+                        {{ $g['rotulo'] }}
+                    </span>
+                    <strong>{{ $g['seg'] }}s</strong>
+                </div>
+            @empty
+                <div class="small text-muted py-2">
+                    Ainda sem medições. O tempo passa a ser gravado a cada vídeo processado daqui pra frente.
+                </div>
+            @endforelse
+
+            <hr class="my-2">
+            <div class="text-muted" style="font-size:.75rem; line-height:1.5;">
+                Reduzir pixels economiza <strong>banda e disco</strong>, não CPU: a saída é sempre 1080x1920,
+                e entrada em 4K custa só ~5% a mais que Full HD no encode. Normalizar no servidor
+                (quando o navegador não consegue) cobra <strong>um encode a mais</strong> — por isso esse
+                grupo aparece separado, e não somado como economia.
+            </div>
+        </div>
+    </div>
+</div>
+
 {{-- ===== Conteúdo publicado (snapshot) ===== --}}
 <h6 class="fw-bold text-uppercase small text-muted mb-2">Conteúdo publicado</h6>
 <div class="row g-3">

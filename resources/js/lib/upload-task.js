@@ -19,8 +19,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  *   - Local (signed=false): POST FormData(arquivo, part_number) pro servidor Laravel
  */
 export class UploadTask {
-    constructor({ file, albumInitUrl, onProgress, onStatus, otimizarNoServidor = false }) {
+    constructor({ file, albumInitUrl, onProgress, onStatus, otimizarNoServidor = false, tamanhoOriginal = null }) {
         this.file = file;
+        // Tamanho antes da redução no navegador — só pra métrica de economia.
+        this.tamanhoOriginal = tamanhoOriginal;
         // Navegador não conseguiu reduzir: o processamento normaliza o original.
         this.otimizarNoServidor = !!otimizarNoServidor;
         this.albumInitUrl = albumInitUrl;
@@ -118,6 +120,7 @@ export class UploadTask {
             chunk_size: chunkSize,
             total_parts: totalParts,
             otimizar_servidor: this.otimizarNoServidor,
+            tamanho_original_bytes: this.tamanhoOriginal,
         });
 
         this.videoId = data.video_id;

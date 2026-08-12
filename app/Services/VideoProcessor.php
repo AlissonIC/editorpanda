@@ -298,6 +298,11 @@ class VideoProcessor
                     'arquivo_original_path' => $pathNovo,
                     'tamanho_bytes' => $bytesNovo,
                     'otimizar_servidor' => false,
+                    // Guarda o de antes pro painel medir a economia. Não sobrescreve
+                    // um valor vindo do navegador (os dois caminhos são exclusivos,
+                    // mas a origem manda na métrica).
+                    'tamanho_original_bytes' => $video->tamanho_original_bytes ?: $bytesAntigo,
+                    'otimizacao_origem' => $video->otimizacao_origem ?: 'servidor',
                 ]);
 
                 // Devolve a diferença pra cota do plano.

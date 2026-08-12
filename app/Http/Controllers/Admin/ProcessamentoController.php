@@ -26,9 +26,13 @@ class ProcessamentoController extends Controller
 
     public function data(Request $request): JsonResponse
     {
+        // Mais recente primeiro. A DataTable roda com ordering desabilitado, então
+        // esta é a ordem final — sem isto o MySQL devolvia por ordem de inserção
+        // (mais antigos no topo).
         $query = Video::query()
             ->with(['album:id,nome', 'user:id,nome'])
-            ->select(['id', 'album_id', 'user_id', 'nome', 'status', 'erro_msg', 'tamanho_bytes', 'created_at', 'processado_em']);
+            ->select(['id', 'album_id', 'user_id', 'nome', 'status', 'erro_msg', 'tamanho_bytes', 'created_at', 'processado_em'])
+            ->orderByDesc('id');
 
         $filters = $request->input('filters', []);
         if (! empty($filters['status'])) {
@@ -39,7 +43,16 @@ class ProcessamentoController extends Controller
             ->addColumn('album', fn ($v) => $v->album?->nome ?? '—')
             ->addColumn('cliente', fn ($v) => $v->user?->nome ?? '—')
             ->editColumn('tamanho_bytes', fn ($v) => $v->tamanho_bytes ? round($v->tamanho_bytes / 1048576, 2) . ' MB' : '—')
-            ->editColumn('status', fn ($v) => '<span class="status-badge ' . $v->status . '">' . ucfirst($v->status) . '</span>')
+            // Motivo da falha no title: hover na linha inteira (nome + status) mostra
+            // o erro sem precisar abrir nada. `e()` porque a coluna é raw.
+            ->editColumn('nome', fn ($v) => $v->erro_msg
+                ? '<span title="' . e($v->erro_msg) . '">' . e($v->nome)
+                    . ' <i class="bi bi-exclamation-triangle-fill text-danger small"></i></span>'
+                : e($v->nome))
+            ->editColumn('status', function ($v) {
+                $title = $v->erro_msg ? ' title="' . e($v->erro_msg) . '"' : '';
+                return '<span class="status-badge ' . $v->status . '"' . $title . '>' . ucfirst($v->status) . '</span>';
+            })
             ->editColumn('created_at', fn ($v) => $v->created_at?->format('d/m/Y H:i'))
             ->addColumn('acoes', function ($v) {
                 if (in_array($v->status, [Video::STATUS_FALHOU, Video::STATUS_PENDENTE], true)) {
@@ -47,7 +60,7 @@ class ProcessamentoController extends Controller
                 }
                 return '—';
             })
-            ->rawColumns(['status', 'acoes'])
+            ->rawColumns(['nome', 'status', 'acoes'])
             ->make(true);
     }
 

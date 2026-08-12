@@ -678,6 +678,7 @@ document.addEventListener('DOMContentLoaded', () => {
         item.task = new UploadTask({
             file: item.file,
             otimizarNoServidor: reducao.precisaServidor,
+            tamanhoOriginal: reducao.reduzido ? antes : null,
             albumInitUrl: initUrl,
             onProgress: (pct) => { item.progress = pct; paintQueueItem(item); },
             onStatus: (st, extra) => {

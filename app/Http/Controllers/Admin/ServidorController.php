@@ -128,10 +128,12 @@ class ServidorController extends Controller
         $totalVendasRange = collect($serieVendas)->sum('valor');
         $totalAssinaturasRange = collect($serieAssinaturas)->sum('valor');
 
+        $otimizacao = $this->metricasOtimizacao();
+
         return view('pages.painel.servidor', [
             'de' => $de->format('Y-m-d'),
             'ate' => $ate->format('Y-m-d'),
-            'diasNoRange' => $de->diffInDays($ate) + 1,
+            'diasNoRange' => (int) floor($de->diffInDays($ate)) + 1,
             'granularidade' => $granularidade,
 
             // Fila
@@ -167,7 +169,73 @@ class ServidorController extends Controller
             'serieAssinaturas' => $serieAssinaturas,
             'totalVendasRange' => $totalVendasRange,
             'totalAssinaturasRange' => $totalAssinaturasRange,
+
+            // Otimização de vídeos
+            'otimizacao' => $otimizacao,
         ]);
+    }
+
+    /**
+     * Quanto a redução de resolução economizou — e o que ela custa/poupa em CPU.
+     *
+     * Números medidos, não chutados:
+     *   - economia de espaço vem de tamanho_original_bytes - tamanho_bytes
+     *   - o custo/ganho de processamento sai da MÉDIA REAL de processamento_ms
+     *     de cada grupo (navegador / servidor / sem otimização)
+     *
+     * Reduzir pixels quase não acelera o encode (a saída é fixa em 1080x1920;
+     * medimos 4K custando ~5% a mais que Full HD que entra). O ganho de verdade
+     * é banda e disco — e normalizar no servidor CUSTA um encode extra. Por isso
+     * os dois grupos aparecem separados em vez de virar um número só.
+     */
+    private function metricasOtimizacao(): array
+    {
+        $agregado = Video::selectRaw("
+                COUNT(*) as total,
+                SUM(CASE WHEN otimizacao_origem IS NOT NULL THEN 1 ELSE 0 END) as otimizados,
+                SUM(CASE WHEN otimizacao_origem = 'navegador' THEN 1 ELSE 0 END) as por_navegador,
+                SUM(CASE WHEN otimizacao_origem = 'servidor' THEN 1 ELSE 0 END) as por_servidor,
+                COALESCE(SUM(CASE WHEN tamanho_original_bytes IS NOT NULL
+                    THEN tamanho_original_bytes - tamanho_bytes ELSE 0 END), 0) as bytes_economizados,
+                COALESCE(SUM(CASE WHEN tamanho_original_bytes IS NOT NULL
+                    THEN tamanho_original_bytes ELSE tamanho_bytes END), 0) as bytes_sem_otimizacao
+            ")
+            ->first();
+
+        $economizados = (int) ($agregado->bytes_economizados ?? 0);
+        $semOtimizacao = (int) ($agregado->bytes_sem_otimizacao ?? 0);
+
+        // Tempo real de pipeline por grupo (só quem já rodou depois da métrica existir)
+        $tempos = Video::whereNotNull('processamento_ms')
+            ->selectRaw("
+                COALESCE(otimizacao_origem, 'sem_otimizacao') as grupo,
+                AVG(processamento_ms) as media_ms,
+                COUNT(*) as total
+            ")
+            ->groupBy('grupo')
+            ->get()
+            ->keyBy('grupo');
+
+        $mediaDe = fn (string $g) => (int) round(($tempos[$g]->media_ms ?? 0) / 1000);
+        $totalDe = fn (string $g) => (int) ($tempos[$g]->total ?? 0);
+
+        return [
+            'total' => (int) ($agregado->total ?? 0),
+            'otimizados' => (int) ($agregado->otimizados ?? 0),
+            'por_navegador' => (int) ($agregado->por_navegador ?? 0),
+            'por_servidor' => (int) ($agregado->por_servidor ?? 0),
+
+            'gb_economizados' => round($economizados / 1073741824, 2),
+            'gb_sem_otimizacao' => round($semOtimizacao / 1073741824, 2),
+            'percentual' => $semOtimizacao > 0 ? round($economizados * 100 / $semOtimizacao, 1) : 0.0,
+
+            'seg_medio_navegador' => $mediaDe('navegador'),
+            'seg_medio_servidor' => $mediaDe('servidor'),
+            'seg_medio_sem_otimizacao' => $mediaDe('sem_otimizacao'),
+            'amostra_navegador' => $totalDe('navegador'),
+            'amostra_servidor' => $totalDe('servidor'),
+            'amostra_sem_otimizacao' => $totalDe('sem_otimizacao'),
+        ];
     }
 
     /**
