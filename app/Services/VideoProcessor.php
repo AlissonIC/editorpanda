@@ -28,8 +28,9 @@ class VideoProcessor
     private const OUT_WIDTH = 1080;
     private const OUT_HEIGHT = 1920;
     private const OUT_FPS = 30;
+    // Defaults — sobrescritos por services.ffmpeg.{crf,preset} (ver encodeCrf/encodePreset)
     private const OUT_CRF = 22;
-    private const OUT_PRESET = 'medium';
+    private const OUT_PRESET = 'fast';
     private const OUT_AUDIO_BITRATE = '128k';
     private const TIMEOUT_SECONDS = 1800; // 30 min
 
@@ -55,6 +56,22 @@ class VideoProcessor
     {
         $this->ffmpegBin = (string) config('services.ffmpeg.bin', 'ffmpeg');
         $this->ffprobeBin = (string) config('services.ffmpeg.ffprobe', 'ffprobe');
+    }
+
+    /** Preset do x264 no encode principal — ver comentário em config/services.php. */
+    private function encodePreset(): string
+    {
+        $valido = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'];
+        $preset = (string) config('services.ffmpeg.preset', self::OUT_PRESET);
+
+        return in_array($preset, $valido, true) ? $preset : self::OUT_PRESET;
+    }
+
+    private function encodeCrf(): int
+    {
+        $crf = (int) config('services.ffmpeg.crf', self::OUT_CRF);
+
+        return ($crf >= 14 && $crf <= 32) ? $crf : self::OUT_CRF;
     }
 
     /**
@@ -413,8 +430,8 @@ class VideoProcessor
             '-map', '0:a?',
             '-r', (string) self::OUT_FPS,
             '-c:v', 'libx264',
-            '-preset', self::OUT_PRESET,
-            '-crf', (string) self::OUT_CRF,
+            '-preset', $this->encodePreset(),
+            '-crf', (string) $this->encodeCrf(),
             '-threads', (string) self::OUT_THREADS,
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',

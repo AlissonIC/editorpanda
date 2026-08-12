@@ -781,6 +781,34 @@ body {
 .reels-screen--marca {
     background-color: #0b0e14;
     background-image: radial-gradient(circle at 50% 42%, #1b2130 0%, #0a0d13 72%);
+
+    /* Camada que pulsa escuro → claro, simulando a variação de luz de uma cena
+       real: é assim que dá pra julgar se o gradiente e a marca d'água do
+       vendedor continuam legíveis nos dois extremos.
+       Anima `opacity` (composta na GPU) em vez do background — sem repaint. */
+    &::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 0; // atrás da logo (1), do gradiente (2), da marca (3) e da UI (4)
+        pointer-events: none;
+        background: radial-gradient(circle at 50% 42%, #57637f 0%, #2a3346 72%);
+        opacity: 0;
+        animation: reels-pulse 3.6s ease-in-out infinite alternate;
+    }
+}
+
+@keyframes reels-pulse {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Quem pediu menos movimento no SO fica com um meio-termo estático */
+@media (prefers-reduced-motion: reduce) {
+    .reels-screen--marca::before {
+        animation: none;
+        opacity: 0.5;
+    }
 }
 .reels-screen-marca {
     position: absolute;

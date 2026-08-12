@@ -38,6 +38,17 @@ return [
     'ffmpeg' => [
         'bin' => env('FFMPEG_BIN', 'ffmpeg'),
         'ffprobe' => env('FFPROBE_BIN', 'ffprobe'),
+
+        // Preset do x264 no encode principal. É o maior fator no tempo de fila —
+        // a resolução de ENTRADA quase não pesa (4K custa ~5% a mais que Full HD,
+        // porque o gargalo é codificar a saída fixa de 1080x1920).
+        // Medido num clipe de 17s: medium 45s · fast 34s (−24%) · veryfast 20s (−56%).
+        // `fast` é o default por manter qualidade praticamente igual ao medium.
+        'preset' => env('FFMPEG_PRESET', 'fast'),
+
+        // CRF do encode principal (menor = melhor/maior). Presets mais rápidos
+        // comprimem menos: se subir pra veryfast e notar perda, desça o CRF em 1.
+        'crf' => (int) env('FFMPEG_CRF', 22),
     ],
 
     'watermark' => [

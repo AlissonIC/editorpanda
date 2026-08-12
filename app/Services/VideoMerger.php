@@ -105,7 +105,8 @@ class VideoMerger
             $cmd = [
                 $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
                 '-f', 'concat', '-safe', '0', '-i', $listPath,
-                '-c:v', 'libx264', '-preset', 'medium', '-crf', '22',
+                '-c:v', 'libx264', '-preset', (string) config('services.ffmpeg.preset', 'fast'),
+                '-crf', (string) config('services.ffmpeg.crf', 22),
                 '-c:a', 'aac', '-b:a', '128k', '-ar', '48000',
                 '-movflags', '+faststart',
                 $outputLocal,

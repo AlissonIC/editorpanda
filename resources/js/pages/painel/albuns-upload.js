@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { UploadTask } from '../../lib/upload-task';
+import { reduzirVideo, suportaReducao } from '../../lib/video-downscale';
 
 const MAX_ARQUIVOS_PARALELOS = 2;
 // Extensões válidas por tipo — usadas como fallback quando o browser não
@@ -619,7 +620,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.showToast(`"${file.name}" não é aceito. Este álbum aceita apenas ${rotuloTipo}.`, 'warning');
                 return;
             }
-            if (file.size > MAX_BYTES) { window.showToast(`"${file.name}" excede o limite de 300 MB.`, 'warning'); return; }
+            // Vídeo acima do teto não é recusado de cara: a redução pré-upload
+            // costuma cortar o arquivo várias vezes. Se ainda estourar depois de
+            // otimizar, o item falha com mensagem clara (ver processItem).
+            const podeEncolher = file.type?.startsWith('video/') && suportaReducao();
+            if (file.size > MAX_BYTES && !podeEncolher) {
+                window.showToast(`"${file.name}" excede o limite de 300 MB.`, 'warning');
+                return;
+            }
 
             const item = { id: ++uid, file, status: 'queued', progress: 0, error: null, task: null };
             queue.push(item);
@@ -636,6 +644,37 @@ document.addEventListener('DOMContentLoaded', () => {
         item.error = null;
         paintQueueItem(item);
         updateCounter();
+
+        // Reduz 4K → Full HD antes de subir. É uma otimização: se não rolar,
+        // `reduzirVideo` devolve o arquivo original e o upload segue igual.
+        const antes = item.file.size;
+        const reducao = await reduzirVideo(item.file, {
+            onProgress: (pct) => {
+                item.detalhe = `Otimizando ${pct}%`;
+                paintQueueItem(item);
+            },
+        });
+        if (reducao.reduzido) {
+            item.file = reducao.file;
+            console.info(`[upload] ${reducao.motivo} · ${humanSize(antes)} → ${humanSize(item.file.size)}`);
+        }
+        item.detalhe = null;
+
+        // Cancelar durante a otimização ainda não tem UploadTask pra abortar —
+        // sem esta guarda o envio começaria depois do usuário desistir.
+        if (item.status !== 'uploading') return;
+
+        // Só agora dá pra saber o tamanho final — um 4K de 400 MB vira ~50 MB,
+        // mas se mesmo assim passar do teto, não adianta tentar enviar.
+        if (item.file.size > MAX_BYTES) {
+            item.status = 'error';
+            item.error = reducao.reduzido
+                ? 'Mesmo otimizado passa de 300 MB. Envie um trecho menor.'
+                : 'Excede o limite de 300 MB.';
+            paintQueueItem(item);
+            updateCounter();
+            return;
+        }
 
         item.task = new UploadTask({
             file: item.file,
