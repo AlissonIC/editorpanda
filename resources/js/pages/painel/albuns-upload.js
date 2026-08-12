@@ -441,7 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="pv-info">
                 <div class="pv-name" title="${escapeHtml(v.nome)}">${escapeHtml(v.nome)}</div>
                 <div class="pv-meta">
-                    <span>${v.tamanho_humano}</span>
+                    <span class="pv-size">${v.tamanho_humano}</span>
                     <span class="pv-sep">·</span>
                     <span><i class="bi ${v.disk === 's3' ? 'bi-cloud' : 'bi-hdd'}"></i> ${v.disk}</span>
                     <span class="pv-sep">·</span>
@@ -1076,6 +1076,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const li = videosList.querySelector(`.pv-item[data-id="${v.id}"]`);
                 if (!li) return;
                 const nome = li.querySelector('.pv-name')?.getAttribute('title') || '';
+                // Tamanho fora do atualizarStatusItem: ele retorna cedo quando o
+                // status não mudou, e o peso pode mudar sozinho (normalização do
+                // original no servidor).
+                const sizeEl = li.querySelector('.pv-size');
+                if (sizeEl && v.tamanho_humano && sizeEl.textContent !== v.tamanho_humano) {
+                    sizeEl.textContent = v.tamanho_humano;
+                }
                 atualizarStatusItem(li, v.status, v.erro_msg, nome);
             });
         } catch {

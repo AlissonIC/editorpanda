@@ -714,12 +714,16 @@ class VideosUploadController extends Controller
 
         $videos = $album->videos()
             ->whereIn('id', $ids)
-            ->select(['id', 'status', 'erro_msg'])
+            ->select(['id', 'status', 'erro_msg', 'tamanho_bytes'])
             ->get()
             ->map(fn ($v) => [
                 'id' => (int) $v->id,
                 'status' => $v->status,
                 'erro_msg' => $v->erro_msg,
+                // O processamento pode encolher o original (normalização de 4K),
+                // e sem isto o card seguiria mostrando o peso do upload até um F5.
+                'tamanho_bytes' => (int) $v->tamanho_bytes,
+                'tamanho_humano' => $this->formatBytes((int) $v->tamanho_bytes),
             ]);
 
         return response()->json(['videos' => $videos]);
