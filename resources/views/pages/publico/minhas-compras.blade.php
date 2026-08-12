@@ -113,10 +113,32 @@
                             </div>
                             <div class="pv-video-info">
                                 <div class="text-truncate small fw-medium">{{ $v->nome }}</div>
+                                @php
+                                    // Mesma regra que o álbum público usa (AlbumPublicoController::
+                                    // mapVideoParaCard): olha a extensão REAL do preview, não o nome.
+                                    // Imagens legadas foram processadas como mp4 e seguem como vídeo
+                                    // até serem reprocessadas — filtro só faz sentido em imagem parada.
+                                    $prev = strtolower((string) $v->arquivo_preview_path);
+                                    $ehFoto = str_ends_with($prev, '.jpg') || str_ends_with($prev, '.jpeg');
+                                @endphp
                                 @if($v->status === 'concluido')
                                     <a href="{{ route('publico.videos.baixar', $v->id) }}" class="btn btn-sm btn-dark w-100 mt-2">
                                         <i class="bi bi-download me-1"></i>Baixar
                                     </a>
+                                    @if($ehFoto)
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-dark w-100 mt-1 js-abrir-filtros"
+                                                data-item-id="{{ $item->id }}"
+                                                data-nome="{{ $v->nome }}"
+                                                data-preset="{{ $item->filtro_preset ?: 'original' }}"
+                                                data-url-salvar="{{ route('publico.compras.item.filtro', $item) }}"
+                                                data-url-baixar="{{ route('publico.videos.baixar', $v->id) }}">
+                                            <i class="bi bi-sliders me-1"></i>Aplicar filtro
+                                        </button>
+                                        <span class="badge bg-dark-subtle text-dark-emphasis mt-1 js-preset-tag {{ $item->filtro_preset ? '' : 'd-none' }}">
+                                            {{ $item->filtro_preset ? ucfirst($item->filtro_preset) : '' }}
+                                        </span>
+                                    @endif
                                 @else
                                     <div class="small text-muted mt-2">Aguarde…</div>
                                 @endif
@@ -128,7 +150,47 @@
         </div>
     @endforeach
 </section>
+
+{{-- Modal de filtros — um só para a página inteira; o conteúdo é montado no JS
+     a partir do card clicado. --}}
+<div class="modal fade" id="modal-filtros" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-sliders me-2"></i>Acabamento da foto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mf-palco is-carregando" id="mf-palco">
+                    <img id="mf-img" alt="">
+                    <span class="mf-vinheta" id="mf-vinheta"></span>
+                    <div class="mf-spinner"><span class="spinner-border"></span></div>
+                </div>
+
+                <div class="mf-tiras" id="mf-tiras"></div>
+
+                <div class="small text-muted mt-2" id="mf-status"></div>
+            </div>
+            <div class="modal-footer justify-content-between flex-wrap gap-2">
+                <span class="small text-muted">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Salvar guarda só a sua escolha — o arquivo original nunca é alterado.
+                </span>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-dark" id="mf-salvar" disabled>
+                        <i class="bi bi-bookmark-check me-1"></i>Salvar preset
+                    </button>
+                    <button type="button" class="btn btn-dark" id="mf-baixar">
+                        <i class="bi bi-download me-1"></i>Baixar com filtro
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
+
+@vite('resources/js/pages/publico/minhas-compras.js')
 
 @push('scripts')
 <script>

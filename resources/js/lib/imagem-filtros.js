@@ -24,66 +24,95 @@ export const FILTROS = [
         label: 'Original',
         css: '',
         ops: [],
+        vinheta: 0,
     },
     {
+        // Cor cheia sem estourar pele. Ganho de saturação vem acompanhado de um
+        // toque de contraste, senão a imagem fica saturada E chapada.
         key: 'vivido',
         label: 'Vívido',
-        css: 'saturate(1.4) contrast(1.1)',
+        css: 'saturate(1.45) contrast(1.12) brightness(1.02)',
         ops: [
-            { type: 'saturate', factor: 1.4 },
-            { type: 'contrast', factor: 1.1 },
+            { type: 'saturate', factor: 1.45 },
+            { type: 'contrast', factor: 1.12 },
+            { type: 'brightness', factor: 1.02 },
         ],
+        vinheta: 0,
     },
     {
+        // Retrato limpo: levanta a exposição e ABRE o contraste (0.94) pra não
+        // fechar sombra em rosto. O leve calor tira o aspecto clínico.
+        key: 'suave',
+        label: 'Suave',
+        css: 'brightness(1.07) contrast(0.94) saturate(1.08) sepia(0.08)',
+        ops: [
+            { type: 'brightness', factor: 1.07 },
+            { type: 'contrast', factor: 0.94 },
+            { type: 'saturate', factor: 1.08 },
+            { type: 'sepia', factor: 0.08 },
+        ],
+        vinheta: 0,
+    },
+    {
+        // Contraste alto + leve dessaturação = look editorial. A vinheta fecha
+        // as bordas e joga o olho pro centro do quadro.
         key: 'dramatico',
         label: 'Dramático',
-        css: 'contrast(1.3) saturate(0.9) brightness(0.95)',
+        css: 'contrast(1.35) saturate(0.92) brightness(0.97)',
         ops: [
-            { type: 'contrast', factor: 1.3 },
-            { type: 'saturate', factor: 0.9 },
-            { type: 'brightness', factor: 0.95 },
+            { type: 'contrast', factor: 1.35 },
+            { type: 'saturate', factor: 0.92 },
+            { type: 'brightness', factor: 0.97 },
         ],
+        vinheta: 0.35,
     },
     {
-        key: 'preto-branco',
+        // P&B com contraste firme — cinza médio puxado pra baixo pra não virar
+        // aquele preto e branco lavado de conversão automática.
+        key: 'mono',
         label: 'P&B',
-        css: 'grayscale(1) contrast(1.1)',
+        css: 'grayscale(1) contrast(1.28) brightness(1.03)',
         ops: [
             { type: 'grayscale', factor: 1 },
-            { type: 'contrast', factor: 1.1 },
+            { type: 'contrast', factor: 1.28 },
+            { type: 'brightness', factor: 1.03 },
         ],
+        vinheta: 0.22,
     },
     {
-        key: 'vintage',
-        label: 'Vintage',
-        css: 'sepia(0.5) contrast(0.95) saturate(0.85)',
+        // Analógico: sepia parcial + giro de matiz pro âmbar, contraste ABAIXO
+        // de 1 pra simular o preto levantado do filme. Vinheta completa o look.
+        key: 'filme',
+        label: 'Filme',
+        css: 'sepia(0.38) hue-rotate(-12deg) saturate(1.18) contrast(0.93) brightness(1.04)',
         ops: [
-            { type: 'sepia', factor: 0.5 },
-            { type: 'contrast', factor: 0.95 },
-            { type: 'saturate', factor: 0.85 },
+            { type: 'sepia', factor: 0.38 },
+            { type: 'channels', r: 1.06, g: 1.0, b: 0.94 },
+            { type: 'saturate', factor: 1.18 },
+            { type: 'contrast', factor: 0.93 },
+            { type: 'brightness', factor: 1.04 },
         ],
+        vinheta: 0.28,
     },
     {
-        key: 'frio',
-        label: 'Frio',
-        // hue-rotate no CSS não é bem imitável em pixel-shift; usamos duas
-        // pipelines diferentes que dão resultado visualmente parecido.
-        css: 'hue-rotate(-15deg) saturate(1.1) brightness(1.05)',
+        // Hora dourada: calor no destaque sem apagar o azul do céu — por isso
+        // sepia baixo com saturação alta, em vez de sepia forte.
+        key: 'dourado',
+        label: 'Dourado',
+        css: 'sepia(0.22) saturate(1.35) hue-rotate(-8deg) brightness(1.05) contrast(1.06)',
         ops: [
-            { type: 'channels', r: 0.95, g: 1.02, b: 1.15 },
+            { type: 'sepia', factor: 0.22 },
+            { type: 'saturate', factor: 1.35 },
+            { type: 'channels', r: 1.08, g: 1.02, b: 0.93 },
             { type: 'brightness', factor: 1.05 },
+            { type: 'contrast', factor: 1.06 },
         ],
-    },
-    {
-        key: 'quente',
-        label: 'Quente',
-        css: 'sepia(0.3) saturate(1.3)',
-        ops: [
-            { type: 'channels', r: 1.15, g: 1.05, b: 0.9 },
-            { type: 'saturate', factor: 1.2 },
-        ],
+        vinheta: 0.15,
     },
 ];
+
+/** Chaves válidas — o backend valida contra a mesma lista (App\Support\FiltrosImagem). */
+export const FILTRO_KEYS = FILTROS.map((f) => f.key);
 
 export function getFiltro(key) {
     return FILTROS.find((f) => f.key === key) || FILTROS[0];
@@ -200,30 +229,62 @@ export function renderizarComFiltro(img, filtro) {
     canvas.height = h;
     const ctx = canvas.getContext('2d');
 
-    if (!filtro || !filtro.ops.length) {
+    if (!filtro || (!filtro.ops.length && !filtro.vinheta)) {
         ctx.drawImage(img, 0, 0);
         return canvas;
     }
 
-    // Caminho rápido: ctx.filter suportado
     if (suportaCtxFilter() && filtro.css) {
+        // Caminho rápido: ctx.filter aceita a MESMA string do preview CSS,
+        // então o que o comprador viu é exatamente o que ele baixa.
         ctx.filter = filtro.css;
         ctx.drawImage(img, 0, 0);
         ctx.filter = 'none';
-        return canvas;
+    } else {
+        // Fallback pixel-a-pixel (Safari antigo): as `ops` espelham o `css`.
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, w, h);
+        for (const op of filtro.ops) {
+            const fn = OPS[op.type];
+            if (!fn) continue;
+            if (op.type === 'channels') fn(imageData.data, op);
+            else fn(imageData.data, op.factor);
+        }
+        ctx.putImageData(imageData, 0, 0);
     }
 
-    // Fallback: pixel manipulation em JS puro
-    ctx.drawImage(img, 0, 0);
-    const imageData = ctx.getImageData(0, 0, w, h);
-    for (const op of filtro.ops) {
-        const fn = OPS[op.type];
-        if (!fn) continue;
-        if (op.type === 'channels') fn(imageData.data, op);
-        else fn(imageData.data, op.factor);
-    }
-    ctx.putImageData(imageData, 0, 0);
+    if (filtro.vinheta) desenharVinheta(ctx, w, h, filtro.vinheta);
+
     return canvas;
+}
+
+/**
+ * Vinheta: escurece as bordas com um radial multiplicativo.
+ *
+ * Existe em CSS (ver `vinhetaCss`) e aqui, porque preview e download PRECISAM
+ * bater — filtro que muda ao baixar é pior que não ter filtro. Usa
+ * `multiply` pra escurecer preservando cor, em vez de lavar com preto chapado.
+ */
+function desenharVinheta(ctx, w, h, forca) {
+    const raio = Math.sqrt(w * w + h * h) / 2;
+    const grad = ctx.createRadialGradient(w / 2, h / 2, raio * 0.55, w / 2, h / 2, raio);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, `rgba(0,0,0,${forca})`);
+
+    const antes = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = antes;
+}
+
+/**
+ * Gradiente equivalente pro preview em CSS. Aplique como `background` de um
+ * elemento sobreposto à imagem, com `mix-blend-mode: multiply`.
+ */
+export function vinhetaCss(filtro) {
+    if (!filtro?.vinheta) return '';
+    return `radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,${filtro.vinheta}) 100%)`;
 }
 
 /**

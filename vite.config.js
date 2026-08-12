@@ -10,6 +10,7 @@ export default defineConfig({
                 'resources/js/pages/public/home.js',
                 'resources/js/pages/publico/album.js',
                 'resources/js/pages/publico/acesso.js',
+                'resources/js/pages/publico/minhas-compras.js',
                 'resources/js/pages/painel/usuarios.js',
                 'resources/js/pages/painel/financeiro.js',
                 'resources/js/pages/painel/processamento.js',

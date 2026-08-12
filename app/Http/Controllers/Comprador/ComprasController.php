@@ -6,10 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Jobs\MesclarVideosJob;
 use App\Models\Configuracao;
 use App\Models\Pedido;
+use App\Models\PedidoItem;
 use App\Models\Video;
 use App\Models\VideoMerge;
+use App\Support\FiltrosImagem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
@@ -31,7 +34,9 @@ class ComprasController extends Controller
             ->with([
                 'album:id,nome,slug',
                 // updated_at entra por causa do ?v= da miniatura (Video::thumbVersao)
-                'itens.video:id,nome,status,thumbnail_path,disk,arquivo_processado_path,duracao_segundos,updated_at',
+                // arquivo_processado_path define o que e foto (.jpg) — os filtros
+                // so aparecem para imagem.
+                'itens.video:id,nome,status,thumbnail_path,disk,arquivo_processado_path,arquivo_preview_path,duracao_segundos,updated_at',
                 'merges',
             ])
             ->orderByDesc('id');
@@ -139,6 +144,30 @@ class ComprasController extends Controller
             'status' => $merge->status,
             'message' => 'Mescla enfileirada — acompanhe em "Minhas compras".',
         ], 202);
+    }
+
+    /**
+     * Salva o preset de filtro escolhido para uma foto comprada.
+     *
+     * Grava só a ESCOLHA — a imagem filtrada é gerada no navegador na hora de
+     * baixar, então o disco continua com um arquivo por foto.
+     */
+    public function salvarFiltro(Request $request, PedidoItem $item): JsonResponse
+    {
+        $comprador = auth('comprador')->user();
+
+        // 404 (não 403) pra não confirmar existência de item de outro comprador
+        $item->loadMissing('pedido');
+        abort_unless($item->pedido && $item->pedido->comprador_id === $comprador->id, 404);
+        abort_unless($item->pedido->status === 'pago', 422, 'Pedido não pago.');
+
+        $data = $request->validate([
+            'filtro_preset' => ['nullable', 'string', Rule::in(FiltrosImagem::KEYS)],
+        ]);
+
+        $item->update(['filtro_preset' => FiltrosImagem::normalizar($data['filtro_preset'] ?? null)]);
+
+        return response()->json(['filtro_preset' => $item->filtro_preset]);
     }
 
     public function mergeStatus(VideoMerge $merge): JsonResponse

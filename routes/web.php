@@ -99,6 +99,12 @@ Route::name('publico.')->group(function () {
         Route::post('/pedidos/{pedido}/merge', [Comprador\ComprasController::class, 'solicitarMerge'])
             ->middleware('throttle:5,1')
             ->name('pedido.merge.solicitar');
+        // Preset de filtro da foto comprada (só a escolha; o arquivo filtrado
+        // é gerado no navegador na hora de baixar)
+        Route::put('/compras/itens/{item}/filtro', [Comprador\ComprasController::class, 'salvarFiltro'])
+            ->middleware('throttle:30,1')
+            ->name('compras.item.filtro');
+
         Route::get('/merges/{merge:slug}', [Comprador\ComprasController::class, 'mergeStatus'])
             ->name('merge.status');
         Route::get('/merges/{merge:slug}/download', [Comprador\ComprasController::class, 'baixarMerge'])

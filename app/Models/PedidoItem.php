@@ -13,6 +13,7 @@ class PedidoItem extends Model
         'pedido_id',
         'video_id',
         'preco_unit',
+        'filtro_preset',
     ];
 
     protected function casts(): array

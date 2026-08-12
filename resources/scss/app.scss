@@ -2112,3 +2112,80 @@ body {
 }
 
 
+
+/* ===== Filtros da foto comprada (modal em Minhas compras) ===== */
+.mf-palco {
+    position: relative;
+    background: #0b0e14;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 320px;
+    max-height: 52vh;
+
+    img {
+        max-width: 100%;
+        max-height: 52vh;
+        display: block;
+        object-fit: contain;
+    }
+    /* Vinheta do preview: multiply pra escurecer preservando cor — mesma
+       operação que o canvas usa no download, senão o preview mentiria. */
+    .mf-vinheta {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        mix-blend-mode: multiply;
+    }
+    .mf-spinner { display: none; color: #fff; }
+    &.is-carregando {
+        img { visibility: hidden; }
+        .mf-spinner { display: block; }
+    }
+}
+
+.mf-tiras {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0.75rem 0.25rem 0.25rem;
+    scrollbar-width: thin;
+}
+.mf-tira {
+    flex: 0 0 auto;
+    border: 0;
+    background: none;
+    padding: 0;
+    width: 74px;
+    cursor: pointer;
+    text-align: center;
+
+    .mf-tira-img {
+        position: relative;
+        display: block;
+        width: 74px;
+        height: 74px;
+        border-radius: 0.5rem;
+        overflow: hidden;
+        border: 2px solid transparent;
+        transition: border-color .15s ease, transform .15s ease;
+        background: #0b0e14;
+
+        img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .mf-tira-vinheta { position: absolute; inset: 0; mix-blend-mode: multiply; }
+    }
+    .mf-tira-label {
+        display: block;
+        font-size: .7rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+        white-space: nowrap;
+    }
+    &:hover .mf-tira-img { transform: translateY(-2px); }
+    &.is-active {
+        .mf-tira-img { border-color: #111; }
+        .mf-tira-label { color: #111; font-weight: 600; }
+    }
+}
