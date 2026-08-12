@@ -260,6 +260,34 @@
             @endforelse
 
             <hr class="my-2">
+            <div class="d-flex justify-content-between align-items-baseline py-1 small">
+                <span>
+                    <i class="bi bi-cpu-fill me-1"></i>Capacidade de encode
+                    <span class="text-muted">— {{ $capacidade['cores'] }} cores ·
+                    {{ $capacidade['workers'] }} worker(s) × {{ $capacidade['threads'] }} threads</span>
+                </span>
+                <strong class="{{ $capacidade['sobra'] < 0 ? 'text-danger' : ($capacidade['sobra'] > 0 ? 'text-muted' : 'text-success') }}">
+                    @if($capacidade['sobra'] < 0)
+                        {{ abs($capacidade['sobra']) }} acima da CPU
+                    @elseif($capacidade['sobra'] > 0)
+                        {{ $capacidade['sobra'] }} core(s) ociosos
+                    @else
+                        no ponto
+                    @endif
+                </strong>
+            </div>
+            @if($capacidade['sobra'] > 0)
+                <div class="text-muted" style="font-size:.75rem;">
+                    Sobra CPU: subir mais um `queue:work` processa
+                    {{ $capacidade['workers'] + 1 }} vídeos em paralelo (ajuste QUEUE_WORKERS junto).
+                </div>
+            @elseif($capacidade['sobra'] < 0)
+                <div class="text-danger" style="font-size:.75rem;">
+                    Workers × threads passa dos cores — os encodes disputam CPU e cada um fica mais lento.
+                </div>
+            @endif
+
+            <hr class="my-2">
             <div class="text-muted" style="font-size:.75rem; line-height:1.5;">
                 Reduzir pixels economiza <strong>banda e disco</strong>, não CPU: a saída é sempre 1080x1920,
                 e entrada em 4K custa só ~5% a mais que Full HD no encode. Normalizar no servidor

@@ -96,8 +96,28 @@ php artisan queue:work --timeout=1830 --tries=1
 php artisan queue:work --timeout=1830 --tries=1
 ```
 
-Cada instância pega um job por vez. FFmpeg saturará 1-4 cores durante o encode.
-Dimensione o número de workers baseado na sua CPU (regra prática: `nCores / 2`).
+Cada instância pega um job por vez — **workers = vídeos processados em paralelo**.
+
+### Dimensionando workers x threads
+
+As threads do ffmpeg são calculadas sozinhas: `cores / QUEUE_WORKERS`. Declare
+quantos workers você sobe e o resto se ajusta pra somar ~100% da CPU:
+
+| Cores | QUEUE_WORKERS | Threads/encode | Em paralelo |
+|-------|---------------|----------------|-------------|
+| 4     | 1             | 4              | 1 vídeo     |
+| 4     | 2             | 2              | 2 vídeos    |
+| 8     | 2             | 4              | 2 vídeos    |
+| 12    | 4             | 3              | 4 vídeos    |
+
+Mais workers com menos threads costuma render mais **vazão total** (x264 tem
+retorno decrescente acima de ~4 threads); menos workers com mais threads entrega
+cada vídeo individual mais rápido. Para fila cheia, prefira mais workers.
+
+`QUEUE_WORKERS` não sobe worker nenhum — é só a declaração de quantos você
+mantém no supervisor. Se subir mais um processo, atualize a variável, senão os
+encodes vão pedir mais CPU do que existe. O painel `/painel/servidor` mostra
+cores detectados, workers declarados e se está sobrando ou faltando CPU.
 
 ### Produção (Linux + systemd)
 

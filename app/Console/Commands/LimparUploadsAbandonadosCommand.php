@@ -80,7 +80,81 @@ class LimparUploadsAbandonadosCommand extends Command
         // Scan de temp folders locais órfãs (sem row de vídeo correspondente)
         $this->limparTempOrfanas($dryRun);
 
+        // Scan das pastas de trabalho do ffmpeg (outro diretório, outro dono)
+        $this->limparTempProcessamento($dryRun, $horas);
+
         return self::SUCCESS;
+    }
+
+    /**
+     * Pastas de trabalho do pipeline: storage/app/temp/{processing,merge}-{id}.
+     *
+     * Elas ficam FORA do disco 'local' (que aponta pra storage/app/private), então
+     * o scan de temp de upload nunca as via. Em execução normal o `finally` do
+     * VideoProcessor/VideoMerger apaga tudo — mas worker morto por OOM, deploy ou
+     * reboot não roda `finally`, e cada pasta dessas segura o original + o
+     * processado + o preview. Com vários vídeos em paralelo isso vira GBs parados.
+     *
+     * Corte por idade em vez de status: um job vive no máximo ~32 min (timeout),
+     * então nada com mais de algumas horas pode pertencer a um encode vivo.
+     */
+    private function limparTempProcessamento(bool $dryRun, int $horas): void
+    {
+        $this->info('Verificando pastas de trabalho do ffmpeg…');
+
+        $base = storage_path('app/temp');
+        if (! is_dir($base)) {
+            return;
+        }
+
+        $limite = now()->subHours(max(2, $horas))->getTimestamp();
+        $removidas = 0;
+        $bytes = 0;
+
+        foreach (glob($base . DIRECTORY_SEPARATOR . '{processing,merge}-*', GLOB_BRACE | GLOB_ONLYDIR) ?: [] as $dir) {
+            $mtime = @filemtime($dir) ?: 0;
+            if ($mtime > $limite) {
+                continue; // pode ser um encode em andamento
+            }
+
+            $tamanho = $this->tamanhoDir($dir);
+            if ($dryRun) {
+                $this->warn(sprintf('[dry-run] apagaria %s (%s MB)', basename($dir), round($tamanho / 1048576, 1)));
+                $removidas++;
+                $bytes += $tamanho;
+                continue;
+            }
+
+            $this->rmrf($dir);
+            if (! is_dir($dir)) {
+                $removidas++;
+                $bytes += $tamanho;
+                $this->line(sprintf('  ✓ %s removida (%s MB)', basename($dir), round($tamanho / 1048576, 1)));
+            } else {
+                $this->error("  ✗ não consegui remover {$dir}");
+            }
+        }
+
+        $this->line($removidas
+            ? sprintf('%d pasta(s) de trabalho órfã(s), %s MB liberados.', $removidas, round($bytes / 1048576, 1))
+            : 'Nenhuma pasta de trabalho órfã.');
+    }
+
+    private function tamanhoDir(string $dir): int
+    {
+        $total = 0;
+        foreach (glob($dir . DIRECTORY_SEPARATOR . '*') ?: [] as $f) {
+            $total += is_dir($f) ? $this->tamanhoDir($f) : (int) (@filesize($f) ?: 0);
+        }
+        return $total;
+    }
+
+    private function rmrf(string $dir): void
+    {
+        foreach (glob($dir . DIRECTORY_SEPARATOR . '*') ?: [] as $f) {
+            is_dir($f) ? $this->rmrf($f) : @unlink($f);
+        }
+        @rmdir($dir);
     }
 
     /**

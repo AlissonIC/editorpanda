@@ -48,7 +48,9 @@ export class UploadTask {
         this.signedExpiraEm = 0;
 
         this.aborted = false;
-        this.adaptive = new AdaptiveConcurrency({ min: 2, max: 6, start: 3 });
+        // max 4 (era 6): com 4 arquivos simultâneos o teto agregado passa a ser
+        // ~16 requisições, em vez de 24.
+        this.adaptive = new AdaptiveConcurrency({ min: 2, max: 4, start: 3 });
     }
 
     async run() {

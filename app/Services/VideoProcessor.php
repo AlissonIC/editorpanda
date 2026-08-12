@@ -35,10 +35,8 @@ class VideoProcessor
     private const OUT_AUDIO_BITRATE = '128k';
     private const TIMEOUT_SECONDS = 1800; // 30 min
 
-    // Threads por encode do FFmpeg. Limitar é essencial pra throughput em
-    // servidor multi-worker: libx264 sem -threads usa todos os cores, então
-    // 4 workers competiriam por 12 cores e context switch destruiria o ganho.
-    // 3 threads × 4 workers = 12 cores dedicados, 4 vídeos em paralelo.
+    // Fallback de threads por encode, usado só quando não dá pra descobrir os
+    // cores da máquina. O valor real vem de encodeThreads(): cores ÷ workers.
     private const OUT_THREADS = 3;
 
     // Teto do ORIGINAL guardado quando o navegador não reduziu (ver
@@ -80,6 +78,47 @@ class VideoProcessor
         $crf = (int) config('services.ffmpeg.crf', self::OUT_CRF);
 
         return ($crf >= 14 && $crf <= 32) ? $crf : self::OUT_CRF;
+    }
+
+    /**
+     * Threads por encode.
+     *
+     * Automático por padrão: cores da máquina ÷ workers declarados. A soma
+     * (workers × threads) fica ≈ cores, que é o ponto onde a CPU satura sem os
+     * processos brigarem entre si — libx264 sem `-threads` agarra todos os
+     * cores e aí N workers só trocam contexto.
+     *
+     * FFMPEG_THREADS no .env sobrescreve, pra quando o servidor divide CPU com
+     * outra coisa (web, banco) e você quer deixar folga.
+     */
+    public static function encodeThreads(): int
+    {
+        $configurado = (int) config('services.ffmpeg.threads', 0);
+        if ($configurado > 0) {
+            return min(32, $configurado);
+        }
+
+        $workers = max(1, (int) config('services.queue.workers', 1));
+        $cores = self::detectarCores();
+
+        return max(1, min(32, intdiv($cores, $workers)));
+    }
+
+    /** Cores disponíveis. Se não der pra descobrir, mantém o default histórico. */
+    public static function detectarCores(): int
+    {
+        // Linux/containers: /proc/cpuinfo não exige shell habilitado
+        if (is_readable('/proc/cpuinfo')) {
+            $n = substr_count((string) @file_get_contents('/proc/cpuinfo'), 'processor');
+            if ($n > 0) return $n;
+        }
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $n = (int) getenv('NUMBER_OF_PROCESSORS');
+            if ($n > 0) return $n;
+        }
+
+        return self::OUT_THREADS;
     }
 
     /**
@@ -258,7 +297,7 @@ class VideoProcessor
                 // os poucos % de compressão extra.
                 '-preset', 'veryfast',
                 '-crf', (string) self::ORIGINAL_CRF,
-                '-threads', (string) self::OUT_THREADS,
+                '-threads', (string) self::encodeThreads(),
                 '-pix_fmt', 'yuv420p',
                 '-movflags', '+faststart',
                 // aac sempre: copiar a faixa arriscaria codec que não cabe em mp4
@@ -588,7 +627,7 @@ class VideoProcessor
             '-c:v', 'libx264',
             '-preset', $this->encodePreset(),
             '-crf', (string) $this->encodeCrf(),
-            '-threads', (string) self::OUT_THREADS,
+            '-threads', (string) self::encodeThreads(),
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
             '-c:a', 'aac',
@@ -680,7 +719,7 @@ class VideoProcessor
             '-map', $lastLabel,
             '-frames:v', '1',
             '-q:v', (string) self::JPG_QUALITY,
-            '-threads', (string) self::OUT_THREADS,
+            '-threads', (string) self::encodeThreads(),
             $output,
         ];
     }

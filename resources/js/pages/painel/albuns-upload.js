@@ -2,7 +2,10 @@ import axios from 'axios';
 import { UploadTask } from '../../lib/upload-task';
 import { reduzirVideo, suportaReducao } from '../../lib/video-downscale';
 
-const MAX_ARQUIVOS_PARALELOS = 2;
+// Uploads simultâneos. Cada arquivo ainda abre 2-4 partes em paralelo, então o
+// pico de requisições é ~16 — acima disso satura o pool do PHP-FPM em upload
+// local sem ganhar vazão (o navegador já limita conexões por origem).
+const MAX_ARQUIVOS_PARALELOS = 4;
 // Extensões válidas por tipo — usadas como fallback quando o browser não
 // preenche file.type (comum com HEIC no Chrome/Firefox desktop).
 const EXT_VIDEO = /\.(mp4|mov|mkv|webm)$/i;
@@ -638,6 +641,17 @@ document.addEventListener('DOMContentLoaded', () => {
         pump();
     }
 
+    // A redução no navegador é CPU pura e em tempo real — rodar 4 ao mesmo tempo
+    // faz o canvas perder frames, a checagem de captura reprovar e todo mundo
+    // acabar subindo o arquivo original. Uma de cada vez: enquanto um arquivo
+    // sobe (rede), o próximo otimiza (CPU).
+    let filaOtimizacao = Promise.resolve();
+    function otimizarNaVez(fn) {
+        const proxima = filaOtimizacao.then(fn, fn);
+        filaOtimizacao = proxima.then(() => {}, () => {});
+        return proxima;
+    }
+
     async function processItem(item) {
         item.status = 'uploading';
         item.progress = 0;
@@ -648,12 +662,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reduz 4K → Full HD antes de subir. É uma otimização: se não rolar,
         // `reduzirVideo` devolve o arquivo original e o upload segue igual.
         const antes = item.file.size;
-        const reducao = await reduzirVideo(item.file, {
+        item.detalhe = 'Na fila de otimização';
+        paintQueueItem(item);
+        const reducao = await otimizarNaVez(() => reduzirVideo(item.file, {
             onProgress: (pct) => {
                 item.detalhe = `Otimizando ${pct}%`;
                 paintQueueItem(item);
             },
-        });
+        }));
         if (reducao.reduzido) {
             item.file = reducao.file;
             console.info(`[upload] ${reducao.motivo} · ${humanSize(antes)} → ${humanSize(item.file.size)}`);

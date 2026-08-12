@@ -130,6 +130,19 @@ class ServidorController extends Controller
 
         $otimizacao = $this->metricasOtimizacao();
 
+        // Capacidade de encode — o admin precisa disso pra decidir quantos
+        // workers subir. `workers` é declarado no .env (são processos externos).
+        $cores = \App\Services\VideoProcessor::detectarCores();
+        $workers = max(1, (int) config('services.queue.workers', 1));
+        $threads = \App\Services\VideoProcessor::encodeThreads();
+        $capacidade = [
+            'cores' => $cores,
+            'workers' => $workers,
+            'threads' => $threads,
+            'ocupacao' => $workers * $threads,
+            'sobra' => $cores - ($workers * $threads),
+        ];
+
         return view('pages.painel.servidor', [
             'de' => $de->format('Y-m-d'),
             'ate' => $ate->format('Y-m-d'),
@@ -172,6 +185,7 @@ class ServidorController extends Controller
 
             // Otimização de vídeos
             'otimizacao' => $otimizacao,
+            'capacidade' => $capacidade,
         ]);
     }
 

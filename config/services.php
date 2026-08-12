@@ -49,6 +49,22 @@ return [
         // CRF do encode principal (menor = melhor/maior). Presets mais rápidos
         // comprimem menos: se subir pra veryfast e notar perda, desça o CRF em 1.
         'crf' => (int) env('FFMPEG_CRF', 22),
+
+        // Threads por encode. Vazio = automático: divide os cores da máquina
+        // pelo número de workers declarado, pra soma saturar a CPU sem
+        // sobrecarregar (workers x threads ~= cores).
+        // libx264 sem -threads pega todos os cores, e aí N workers brigam entre
+        // si e o context switch come o ganho.
+        'threads' => env('FFMPEG_THREADS'),
+    ],
+
+    /*
+     * Quantos `queue:work` você mantém rodando. O app não tem como descobrir
+     * isso sozinho (são processos externos, supervisor/systemd), então declare
+     * aqui — é o que permite dimensionar as threads do ffmpeg.
+     */
+    'queue' => [
+        'workers' => (int) env('QUEUE_WORKERS', 1),
     ],
 
     'watermark' => [
