@@ -28,9 +28,8 @@
     {{-- ============ NAVBAR ============ --}}
     <nav class="landing-nav">
         <div class="container d-flex align-items-center justify-content-between py-3">
-            <a href="#" class="brand d-flex align-items-center gap-2 text-decoration-none">
-                <span class="brand-mark">🐼</span>
-                <span class="brand-name">Editor Panda</span>
+            <a href="#" class="brand d-flex align-items-center text-decoration-none">
+                @include('theme::partials.logo', ['variante' => 'escura', 'altura' => 48])
             </a>
             <ul class="nav-links d-none d-lg-flex align-items-center gap-4 m-0 p-0">
                 <li><a href="#sobre">Sobre</a></li>
@@ -319,9 +318,9 @@
         <div class="container">
             <div class="row g-4">
                 <div class="col-lg-5">
-                    <div class="d-flex align-items-center gap-2 mb-3">
-                        <span class="brand-mark">🐼</span>
-                        <span class="brand-name">Editor Panda</span>
+                    <div class="d-flex align-items-center mb-3">
+                        {{-- Footer é #0b1120: variante clara --}}
+                        @include('theme::partials.logo', ['variante' => 'clara', 'altura' => 44])
                     </div>
                     <p class="text-white-50">
                         A plataforma mais completa para fotógrafos e videomakers venderem seus trabalhos.

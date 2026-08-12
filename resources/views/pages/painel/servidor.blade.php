@@ -3,113 +3,200 @@
 @section('titulo', 'Servidor')
 
 @php
-    // Formatador em pt-BR pra tempo médio
-    $tm = $tempoMedioSegundos;
-    if ($tm <= 0)      $tempoMedioLabel = '—';
-    elseif ($tm < 60)  $tempoMedioLabel = round($tm) . 's';
-    elseif ($tm < 3600) $tempoMedioLabel = round($tm / 60, 1) . ' min';
-    else               $tempoMedioLabel = round($tm / 3600, 1) . ' h';
+    $fmtTempo = function ($seg) {
+        if ($seg <= 0)   return '—';
+        if ($seg < 60)   return round($seg) . 's';
+        if ($seg < 3600) return round($seg / 60, 1) . ' min';
+        return round($seg / 3600, 1) . ' h';
+    };
 
-    $chartMax = max(1, ...$serieDias->pluck('total')->all());
+    $brl = fn ($v) => 'R$ ' . number_format((float) $v, 2, ',', '.');
+    $totalReceitaRange = $totalVendasRange + $totalAssinaturasRange;
 @endphp
+
+@push('scripts')
+    {{-- Chart.js via CDN — evita adicionar dependência npm só pra essa tela.
+         Versão 4 UMD é compatível com todos os browsers modernos. --}}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+@endpush
 
 @section('conteudo')
 <x-theme::page-header
     titulo="Relatório do servidor"
-    subtitulo="Métricas operacionais: processamento, storage, assinantes"
+    subtitulo="Métricas operacionais no período selecionado"
 />
 
-{{-- ===== Bloco 1: Processamento de vídeo ===== --}}
-<h6 class="fw-bold text-uppercase small text-muted mb-2">Processamento</h6>
-<div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Vídeos totais" value="{{ number_format($videosTotal, 0, ',', '.') }}" icon="bi-collection-play" color="dark" />
+{{-- ===== Filtro de range de datas ===== --}}
+<form method="get" class="panda-card mb-4 d-flex flex-wrap align-items-end gap-3">
+    <div>
+        <label class="form-label small mb-1">De</label>
+        <input type="date" name="de" value="{{ $de }}" class="form-control form-control-sm" style="width: 160px;">
     </div>
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Processados (24h)" value="{{ number_format($processados24h, 0, ',', '.') }}" icon="bi-check-circle" color="success" />
+    <div>
+        <label class="form-label small mb-1">Até</label>
+        <input type="date" name="ate" value="{{ $ate }}" class="form-control form-control-sm" style="width: 160px;">
     </div>
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Processados (7d)" value="{{ number_format($processados7d, 0, ',', '.') }}" icon="bi-graph-up" color="info" />
+    <div class="d-flex gap-2 align-items-center">
+        <button type="submit" class="btn btn-dark-panda btn-sm">
+            <i class="bi bi-funnel me-1"></i>Aplicar
+        </button>
+        <div class="btn-group btn-group-sm" role="group">
+            <a href="?de={{ now()->subDays(7)->format('Y-m-d') }}&ate={{ now()->format('Y-m-d') }}" class="btn btn-outline-secondary">7d</a>
+            <a href="?de={{ now()->subDays(30)->format('Y-m-d') }}&ate={{ now()->format('Y-m-d') }}" class="btn btn-outline-secondary">30d</a>
+            <a href="?de={{ now()->subDays(90)->format('Y-m-d') }}&ate={{ now()->format('Y-m-d') }}" class="btn btn-outline-secondary">90d</a>
+            <a href="?de={{ now()->subDays(365)->format('Y-m-d') }}&ate={{ now()->format('Y-m-d') }}" class="btn btn-outline-secondary">1a</a>
+        </div>
     </div>
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Tempo médio" value="{{ $tempoMedioLabel }}" icon="bi-stopwatch" color="primary" />
+    <div class="ms-auto small text-muted">
+        <i class="bi bi-calendar-range me-1"></i>
+        <strong>{{ $diasNoRange }}</strong> dia(s) · agrupamento
+        <strong>{{ $granularidade === 'semana' ? 'semanal' : 'diário' }}</strong>
     </div>
-</div>
+</form>
 
-<div class="row g-3 mb-4">
-    <div class="col-12 col-lg-7">
-        <div class="panda-card">
-            <h6 class="fw-bold mb-3">Estado atual da fila</h6>
-            <div class="row g-3">
-                <div class="col-6 col-md-3">
-                    <div class="p-3 rounded" style="background:#eef1f6;">
-                        <div class="small text-muted">Enviando</div>
-                        <div class="h4 fw-bold mb-0">{{ $videosEnviando }}</div>
-                    </div>
+{{-- ===== Grande chart de receitas ===== --}}
+<div class="panda-card mb-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap mb-3">
+        <div>
+            <h6 class="fw-bold mb-1">Receita no período</h6>
+            <div class="small text-muted">Vendas de vídeos (compradores) vs Assinaturas do sistema (fotógrafos)</div>
+        </div>
+        <div class="text-end">
+            <div class="h4 fw-bold mb-0">{{ $brl($totalReceitaRange) }}</div>
+            <div class="small text-muted">Total no período</div>
+        </div>
+    </div>
+
+    <div class="row g-2 mb-3">
+        <div class="col-6">
+            <div class="p-3 rounded" style="background:#dbeafe;">
+                <div class="small text-muted">
+                    <span class="d-inline-block me-1" style="width:10px;height:10px;background:#3b82f6;border-radius:2px;"></span>
+                    Vendas de vídeos
                 </div>
-                <div class="col-6 col-md-3">
-                    <div class="p-3 rounded" style="background:#fef3c7;">
-                        <div class="small text-muted">Pendentes</div>
-                        <div class="h4 fw-bold mb-0">{{ $videosPendentes }}</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="p-3 rounded" style="background:#dbeafe;">
-                        <div class="small text-muted">Processando</div>
-                        <div class="h4 fw-bold mb-0">{{ $videosProcessando }}</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="p-3 rounded" style="background:{{ $videosFalhados > 0 ? '#fee2e2' : '#f3f4f6' }};">
-                        <div class="small text-muted">Falharam</div>
-                        <div class="h4 fw-bold mb-0 {{ $videosFalhados > 0 ? 'text-danger' : '' }}">{{ $videosFalhados }}</div>
-                    </div>
-                </div>
+                <div class="h5 fw-bold mb-0">{{ $brl($totalVendasRange) }}</div>
             </div>
-            <div class="mt-3 small text-muted">
-                <i class="bi bi-info-circle me-1"></i>
-                Concluídos totais: <strong>{{ number_format($videosConcluidos, 0, ',', '.') }}</strong>
-                · últimos 30d: <strong>{{ number_format($processados30d, 0, ',', '.') }}</strong>
+        </div>
+        <div class="col-6">
+            <div class="p-3 rounded" style="background:#ede9fe;">
+                <div class="small text-muted">
+                    <span class="d-inline-block me-1" style="width:10px;height:10px;background:#8b5cf6;border-radius:2px;"></span>
+                    Assinaturas do sistema
+                </div>
+                <div class="h5 fw-bold mb-0">{{ $brl($totalAssinaturasRange) }}</div>
             </div>
         </div>
     </div>
 
-    <div class="col-12 col-lg-5">
+    <div style="position: relative; height: 320px;">
+        <canvas id="chart-receita"
+                data-labels='@json(collect($serieVendas)->pluck('label')->all())'
+                data-vendas='@json(collect($serieVendas)->pluck('valor')->all())'
+                data-assinaturas='@json(collect($serieAssinaturas)->pluck('valor')->all())'
+        ></canvas>
+    </div>
+</div>
+
+{{-- ===== Processamento (respeita range) ===== --}}
+<h6 class="fw-bold text-uppercase small text-muted mb-2">Processamento no período</h6>
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <x-theme::stat-card label="Total processado" value="{{ number_format($processadosRange, 0, ',', '.') }}" icon="bi-check-circle" color="success" />
+    </div>
+    <div class="col-6 col-md-3">
+        <x-theme::stat-card label="Tempo médio — Vídeos" value="{{ $fmtTempo($tempoMedioVideo) }}" icon="bi-film" color="primary" />
+    </div>
+    <div class="col-6 col-md-3">
+        <x-theme::stat-card label="Tempo médio — Fotos" value="{{ $fmtTempo($tempoMedioImagem) }}" icon="bi-image" color="info" />
+    </div>
+    <div class="col-6 col-md-3">
+        <x-theme::stat-card label="Falharam agora" value="{{ $videosFalhados }}" icon="bi-x-octagon" color="{{ $videosFalhados > 0 ? 'warning' : 'secondary' }}" />
+    </div>
+</div>
+
+{{-- Detalhamento da fila (snapshot atual, não afeta pelo range) --}}
+<div class="panda-card mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0">Estado atual da fila</h6>
+        <span class="small text-muted">snapshot agora — independe do período</span>
+    </div>
+    <div class="row g-3">
+        <div class="col-6 col-md-3">
+            <div class="p-3 rounded" style="background:#eef1f6;">
+                <div class="small text-muted">Enviando</div>
+                <div class="h4 fw-bold mb-0">{{ $videosEnviando }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="p-3 rounded" style="background:#fef3c7;">
+                <div class="small text-muted">Pendentes</div>
+                <div class="h4 fw-bold mb-0">{{ $videosPendentes }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="p-3 rounded" style="background:#dbeafe;">
+                <div class="small text-muted">Processando</div>
+                <div class="h4 fw-bold mb-0">{{ $videosProcessando }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="p-3 rounded" style="background:#f3f4f6;">
+                <div class="small text-muted">Concluídos totais</div>
+                <div class="h4 fw-bold mb-0">{{ number_format($videosConcluidos, 0, ',', '.') }}</div>
+            </div>
+        </div>
+    </div>
+    @if($totalVideoProcessado > 0 || $totalImagemProcessada > 0)
+        <div class="small text-muted mt-3">
+            No período: <strong>{{ $totalVideoProcessado }}</strong> vídeo(s) · <strong>{{ $totalImagemProcessada }}</strong> foto(s)
+        </div>
+    @endif
+</div>
+
+{{-- ===== Storage ===== --}}
+<h6 class="fw-bold text-uppercase small text-muted mb-2">Armazenamento & assinantes</h6>
+<div class="row g-3 mb-4">
+    <div class="col-md-8">
         <div class="panda-card h-100">
-            <h6 class="fw-bold mb-3">Processados por dia (últimos 7)</h6>
-            <div class="pv-mini-chart">
-                @foreach($serieDias as $dia)
-                    <div class="pv-mini-chart-col" title="{{ $dia['label'] }}: {{ $dia['total'] }}">
-                        <div class="pv-mini-chart-bar" style="height: {{ max(4, round($dia['total'] * 100 / $chartMax)) }}%;">
-                            <span class="pv-mini-chart-val">{{ $dia['total'] }}</span>
-                        </div>
-                        <div class="pv-mini-chart-label">{{ $dia['label'] }}</div>
+            <div class="d-flex align-items-start gap-3">
+                <div style="font-size:2rem; color:#f59e0b;"><i class="bi bi-hdd-fill"></i></div>
+                <div class="flex-grow-1">
+                    <div class="small text-muted mb-1">
+                        Armazenamento — disco atual: <strong>{{ strtoupper($storageInfo['tipo']) }}</strong>
                     </div>
-                @endforeach
+                    @if(($storageInfo['tipo'] ?? '') === 'local' && isset($storageInfo['total_gb']))
+                        {{-- Local: mostra ocupado de disponível --}}
+                        <div class="h4 fw-bold mb-2">
+                            {{ number_format($storageInfo['usado_gb'], 1, ',', '.') }} GB
+                            <span class="text-muted fw-normal fs-6">de {{ number_format($storageInfo['total_gb'], 1, ',', '.') }} GB</span>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar {{ $storageInfo['pct_usado'] > 85 ? 'bg-danger' : ($storageInfo['pct_usado'] > 70 ? 'bg-warning' : 'bg-success') }}"
+                                 style="width: {{ $storageInfo['pct_usado'] }}%;"></div>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            {{ $storageInfo['pct_usado'] }}% usado ·
+                            {{ number_format($storageInfo['livre_gb'], 1, ',', '.') }} GB livres ·
+                            <strong>{{ number_format($storageGb, 2, ',', '.') }} GB</strong> em vídeos do app
+                        </div>
+                    @else
+                        {{-- S3 (bucket cloud sem limite conhecido): só mostra usado no bucket --}}
+                        <div class="h4 fw-bold mb-0">{{ number_format($storageGb, 2, ',', '.') }} GB</div>
+                        <div class="small text-muted">
+                            Armazenados em bucket S3 — limite dependente do plano contratado com o provedor.
+                        </div>
+                    @endif
+                </div>
             </div>
         </div>
     </div>
-</div>
-
-{{-- ===== Bloco 2: Storage + Assinantes ===== --}}
-<h6 class="fw-bold text-uppercase small text-muted mb-2">Storage & assinantes</h6>
-<div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Storage usado" value="{{ number_format($storageGb, 2, ',', '.') }} GB" icon="bi-hdd" color="warning" />
-    </div>
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Reservado (quota)" value="{{ number_format($storageReservadoGb, 2, ',', '.') }} GB" icon="bi-hdd-fill" color="secondary" />
-    </div>
-    <div class="col-6 col-md-3">
+    <div class="col-md-4">
         <x-theme::stat-card label="Assinantes ativos" value="{{ $assinantesAtivos }} / {{ $usuariosTotal }}" icon="bi-people-fill" color="success" />
     </div>
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Expirando (7d)" value="{{ $assinantesExpirando7d }}" icon="bi-hourglass-split" color="{{ $assinantesExpirando7d > 0 ? 'warning' : 'secondary' }}" />
-    </div>
 </div>
 
-{{-- ===== Bloco 3: Conteúdo publicado + vendas do mês ===== --}}
-<h6 class="fw-bold text-uppercase small text-muted mb-2">Conteúdo & vendas do mês</h6>
+{{-- ===== Conteúdo publicado (snapshot) ===== --}}
+<h6 class="fw-bold text-uppercase small text-muted mb-2">Conteúdo publicado</h6>
 <div class="row g-3">
     <div class="col-6 col-md-3">
         <x-theme::stat-card label="Eventos ativos" value="{{ $eventosAtivos }} / {{ $eventosTotal }}" icon="bi-calendar-event" color="info" />
@@ -117,11 +204,69 @@
     <div class="col-6 col-md-3">
         <x-theme::stat-card label="Álbuns publicados" value="{{ $albunsPublicados }} / {{ $albunsTotal }}" icon="bi-images" color="primary" />
     </div>
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Vendas do mês" value="R$ {{ number_format($vendasMes, 2, ',', '.') }}" icon="bi-cash-stack" color="success" />
-    </div>
-    <div class="col-6 col-md-3">
-        <x-theme::stat-card label="Pedidos do mês" value="{{ $pedidosMes }}" icon="bi-receipt" color="dark" />
-    </div>
 </div>
+
+@push('scripts')
+    <script>
+        // Chart.js: instância única do gráfico de receita. Setup roda depois
+        // que o script CDN carrega (defer). Se o script falhar, o canvas fica
+        // em branco mas a página não quebra.
+        document.addEventListener('DOMContentLoaded', () => {
+            const wait = () => {
+                if (typeof Chart === 'undefined') return setTimeout(wait, 50);
+                const el = document.getElementById('chart-receita');
+                if (!el) return;
+                const labels = JSON.parse(el.dataset.labels || '[]');
+                const vendas = JSON.parse(el.dataset.vendas || '[]');
+                const assinaturas = JSON.parse(el.dataset.assinaturas || '[]');
+                new Chart(el, {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: 'Vendas de vídeos',
+                                data: vendas,
+                                backgroundColor: '#3b82f6',
+                                borderRadius: 4,
+                                stack: 'total',
+                            },
+                            {
+                                label: 'Assinaturas',
+                                data: assinaturas,
+                                backgroundColor: '#8b5cf6',
+                                borderRadius: 4,
+                                stack: 'total',
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { position: 'top', align: 'end' },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => `${ctx.dataset.label}: R$ ${ctx.parsed.y.toFixed(2).replace('.', ',')}`,
+                                },
+                            },
+                        },
+                        scales: {
+                            x: { stacked: true, grid: { display: false } },
+                            y: {
+                                stacked: true,
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: (v) => 'R$ ' + Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 }),
+                                },
+                            },
+                        },
+                    },
+                });
+            };
+            wait();
+        });
+    </script>
+@endpush
 @endsection

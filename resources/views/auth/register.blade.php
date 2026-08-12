@@ -7,7 +7,7 @@
     <div class="card shadow-lg border-0 my-4" style="max-width: 560px; width: 92%;">
         <div class="card-body p-4 p-md-5">
             <div class="text-center mb-4">
-                <div style="font-size: 2.5rem;">🐼</div>
+                @include('theme::partials.logo', ['variante' => 'escura', 'altura' => 52, 'classe' => 'mb-3'])
                 <h2 class="h4 mb-1 fw-bold">Criar conta</h2>
                 <p class="text-muted small mb-0">Comece a vender suas mídias</p>
             </div>

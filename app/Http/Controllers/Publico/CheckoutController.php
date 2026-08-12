@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Video;
 use App\Notifications\CompraFinalizadaNotification;
 use App\Notifications\CompraGratuitaNotification;
+use App\Services\PedidoMergeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -82,6 +83,9 @@ class CheckoutController extends Controller
             'video_ids' => ['required', 'array', 'min:1', 'max:200'],
             'video_ids.*' => ['integer'],
             'codigo_cupom' => ['nullable', 'string', 'max:60'],
+            // Opt-in do "recebo tudo num arquivo só". Sem custo extra — é o
+            // mesmo material, só concatenado.
+            'mesclar' => ['sometimes', 'boolean'],
         ]);
 
         // Dedup dentro do request
@@ -198,6 +202,9 @@ class CheckoutController extends Controller
                 'desconto_cupom' => $descontoCupom > 0 ? $descontoCupom : null,
                 'desconto_quantidade' => $descontoQtd > 0 ? $descontoQtd : null,
                 'status' => $statusInicial,
+                // Só faz sentido com 2+ itens sobrevivendo ao dedup — se o
+                // comprador marcou e um dos vídeos caiu fora, a flag morre aqui.
+                'mesclar_solicitado' => ! empty($data['mesclar']) && $videos->count() >= 2,
                 'pago_em' => $ehGratis ? now() : null,
                 'gateway_id' => $ehGratis ? 'gratis' : null, // marca origem gratuita p/ relatórios
             ]);
@@ -225,6 +232,11 @@ class CheckoutController extends Controller
         // vai pra área do comprador, recebe links assinados de download direto.
         // Mais fricção-free pra fluxo de brinde/gratuito.
         if ($album->ehGratuito()) {
+            // Gratuito já nasce pago — enfileira a mescla na hora. O e-mail sai
+            // com os links individuais (o concat é assíncrono); o arquivo único
+            // aparece em "Minhas compras" quando o ffmpeg termina.
+            $mergeGratis = app(PedidoMergeService::class)->criarSeSolicitado($pedido);
+
             $links = $videos->map(fn (Video $v) => [
                 'nome' => $v->fresh()->nome_exibicao,
                 'url' => URL::temporarySignedRoute(
@@ -243,7 +255,9 @@ class CheckoutController extends Controller
             return response()->json([
                 'pedido_id' => $pedido->id,
                 'gratis' => true,
-                'message' => 'Enviamos os arquivos por e-mail em instantes.',
+                'message' => $mergeGratis
+                    ? 'Enviamos os arquivos por e-mail em instantes. O vídeo único aparece em "Minhas compras" assim que ficar pronto.'
+                    : 'Enviamos os arquivos por e-mail em instantes.',
             ]);
         }
 
@@ -327,6 +341,12 @@ class CheckoutController extends Controller
             'pedido' => $pedido,
             'downloadUrls' => $downloadUrls,
             'edicaoManual' => $edicaoManual,
+            // Mescla pedida no checkout: aqui só informamos o andamento. O
+            // download exige sessão de comprador (o acesso a esta página pode
+            // ser só pela URL assinada, sem login).
+            'merge' => $pedido->mesclar_solicitado
+                ? $pedido->merges()->whereNotNull('comprador_id')->orderByDesc('id')->first()
+                : null,
         ]);
     }
 

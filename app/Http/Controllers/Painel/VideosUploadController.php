@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Painel;
 
+use App\Exceptions\VideoProtegidoException;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessarVideoJob;
 use App\Models\Album;
@@ -641,7 +642,9 @@ class VideosUploadController extends Controller
             } catch (\Throwable) { /* silencia; delete segue */ }
         }
 
-        $video->delete();
+        // Transação: linha + cota + limpeza de itens de pedido caem juntas.
+        // Os arquivos só somem depois do commit (Video::deleted).
+        DB::transaction(fn () => $video->delete());
 
         return response()->json(['message' => 'Vídeo removido.']);
     }
@@ -802,25 +805,39 @@ class VideosUploadController extends Controller
             $query->where('user_id', auth()->id());
         }
 
-        // Cada delete dispara Video::deleting (arquivo + decrement counter).
-        // DB::transaction garante consistência do contador em massa.
-        $removidos = DB::transaction(function () use ($query) {
+        // Cada delete dispara Video::deleting/deleted (cota + limpeza; arquivos
+        // só depois do commit). DB::transaction garante consistência do contador.
+        // Vídeos vendidos são pulados — não faz sentido abortar o lote inteiro
+        // porque um item do meio está protegido.
+        [$removidos, $bloqueados] = DB::transaction(function () use ($query) {
             $count = 0;
-            $query->get()->each(function (Video $v) use (&$count) {
+            $bloqueados = 0;
+            $query->get()->each(function (Video $v) use (&$count, &$bloqueados) {
                 if ($v->disk === 's3' && $v->upload_id) {
                     try {
                         app(S3MultipartService::class)->abort($v->arquivo_original_path, $v->upload_id);
                     } catch (\Throwable) { /* segue */ }
                 }
-                $v->delete();
-                $count++;
+                try {
+                    $v->delete();
+                    $count++;
+                } catch (VideoProtegidoException) {
+                    // Lançada antes de qualquer escrita — transação segue limpa.
+                    $bloqueados++;
+                }
             });
-            return $count;
+            return [$count, $bloqueados];
         });
 
+        $message = "{$removidos} vídeo(s) removido(s).";
+        if ($bloqueados > 0) {
+            $message .= " {$bloqueados} mantido(s) por já ter(em) pedido pago.";
+        }
+
         return response()->json([
-            'message' => "{$removidos} vídeo(s) removido(s).",
+            'message' => $message,
             'removidos' => $removidos,
+            'bloqueados' => $bloqueados,
         ]);
     }
 

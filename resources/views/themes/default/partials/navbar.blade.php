@@ -5,11 +5,8 @@
 <nav class="panda-navbar navbar navbar-expand-lg">
     <div class="container-fluid px-md-5">
         <a class="navbar-brand d-flex align-items-center gap-2" href="{{ route('painel.dashboard') }}">
-            <span style="font-size: 1.4rem;">🐼</span>
-            <span>
-                {{ config('app.name') }}
-                @if($isAdmin)<span class="text-muted fw-normal">Admin</span>@endif
-            </span>
+            @include('theme::partials.logo', ['variante' => 'escura', 'altura' => 38])
+            @if($isAdmin)<span class="text-muted fw-normal">Admin</span>@endif
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navPainel">
             <span class="navbar-toggler-icon"></span>

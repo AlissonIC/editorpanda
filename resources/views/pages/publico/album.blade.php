@@ -296,6 +296,26 @@
                     @endif
                 </div>
 
+                {{-- Opção de mescla — só aparece com 2+ selecionados (JS controla).
+                     Não cobra nada: é o mesmo material entregue também concatenado. --}}
+                @unless($edicaoManual)
+                    <div class="pv-merge-opt d-none mb-3" id="pv-merge-opt">
+                        <label class="d-flex gap-2 align-items-start mb-0" for="pv-form-mesclar" role="button">
+                            <input class="form-check-input mt-1 flex-shrink-0" type="checkbox"
+                                   id="pv-form-mesclar" name="mesclar" value="1" form="pv-checkout-form">
+                            <span class="small">
+                                <span class="fw-semibold d-block">
+                                    <i class="bi bi-collection-play me-1"></i>Juntar tudo em um vídeo só
+                                </span>
+                                <span class="text-muted">
+                                    Você recebe os <strong><span id="pv-merge-count">0</span> vídeos</strong> separados
+                                    e também um arquivo único com todos na sequência. Sem custo extra.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+                @endunless
+
                 {{-- ===== VIEW: FORM DE CHECKOUT ===== --}}
                 <div id="pv-checkout-view">
                     <form id="pv-checkout-form" novalidate autocomplete="on"

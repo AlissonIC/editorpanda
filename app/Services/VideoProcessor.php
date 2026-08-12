@@ -651,12 +651,205 @@ class VideoProcessor
     }
 
     /**
-     * Cria PNG semi-transparente com o texto do site tiled em diagonal.
-     * Padrão denso — cobre o frame inteiro em 30°. Halo branco dá contraste
-     * em cenas claras E escuras. Remover em pós exige inpainting que arruína
-     * o vídeo original.
+     * Cria a PNG do watermark no tamanho exato do preview.
+     *
+     * Preferência: a LOGO da marca, tiled em diagonal e semi-transparente.
+     * Se o arquivo não estiver disponível (deploy sem public/img, GD sem PNG),
+     * cai no padrão de texto — preview sem marca d'água nunca é opção.
      */
     private function generateDiagonalWatermarkPng(string $outputPath, int $width, int $height): void
+    {
+        $logo = $this->resolveWatermarkLogo();
+        if ($logo !== null) {
+            try {
+                $this->desenharLogoTiled($outputPath, $width, $height, $logo);
+                return;
+            } catch (\Throwable $e) {
+                LogProcessamento::warning('watermark.logo_falhou', 'Watermark com logo falhou, usando texto', [
+                    'erro' => mb_substr($e->getMessage(), 0, 300),
+                ]);
+            }
+        }
+
+        $this->desenharTextoTiled($outputPath, $width, $height);
+    }
+
+    /**
+     * Caminho da logo usada no watermark. Configurável (WATERMARK_LOGO) com
+     * default na variante clara — traço branco lê melhor sobre a maioria das
+     * cenas, e o contorno escuro que aplicamos garante o resto.
+     */
+    private function resolveWatermarkLogo(): ?string
+    {
+        $configurado = (string) config('services.watermark.logo', '');
+        if ($configurado !== '' && is_file($configurado)) return $configurado;
+
+        $padrao = public_path('img/logo-clara.png');
+        return is_file($padrao) ? $padrao : null;
+    }
+
+    /**
+     * Tiling da logo em diagonal.
+     *
+     * Cada tile é composto uma vez (sombra escura + logo clara, com opacidade)
+     * e depois copiado cru pro canvas. Copiar cru exige que os tiles NÃO se
+     * sobreponham — o que combina com o pedido de espaçamento generoso; o passo
+     * do grid é sempre maior que o tile por construção.
+     */
+    private function desenharLogoTiled(string $outputPath, int $width, int $height, string $logoPath): void
+    {
+        $logo = @imagecreatefrompng($logoPath);
+        if (! $logo) {
+            throw new RuntimeException("Não foi possível ler a logo: {$logoPath}");
+        }
+
+        try {
+            // Tile proporcional ao frame: ~30% da largura. Em 540px de preview
+            // dá ~162px — legível sem virar tarja.
+            $tileW = max(90, (int) round($width * 0.30));
+            $tileH = max(1, (int) round($tileW * imagesy($logo) / imagesx($logo)));
+
+            $tile = $this->comporTileLogo($logo, $tileW, $tileH);
+
+            // Rotação de 30°: mesmo ângulo do watermark de texto. Dificulta
+            // recorte automático e não deixa a marca alinhada com a cena.
+            $transparente = imagecolorallocatealpha($tile, 0, 0, 0, 127);
+            $tileRot = imagerotate($tile, 30, $transparente);
+            imagealphablending($tileRot, false);
+            imagesavealpha($tileRot, true);
+            imagedestroy($tile);
+
+            $rotW = imagesx($tileRot);
+            $rotH = imagesy($tileRot);
+
+            // Canvas transparente do tamanho do preview
+            $canvas = imagecreatetruecolor($width, $height);
+            imagealphablending($canvas, false);
+            imagesavealpha($canvas, true);
+            imagefill($canvas, 0, 0, imagecolorallocatealpha($canvas, 0, 0, 0, 127));
+
+            // "Bem espaçada": folga de ~55% do tile entre uma logo e outra.
+            // Como o passo > tile, os copies crus nunca se apagam entre si.
+            $stepX = (int) round($rotW * 1.55);
+            $stepY = (int) round($rotH * 1.55);
+
+            // Extrapola as bordas pra não deixar canto sem cobertura
+            for ($y = -$rotH; $y < $height + $rotH; $y += $stepY) {
+                // Linhas alternadas deslocadas — evita "colunas" de logo
+                $linha = intdiv($y + $rotH, max(1, $stepY));
+                $offset = ($linha % 2 === 0) ? 0 : intdiv($stepX, 2);
+                for ($x = -$rotW; $x < $width + $rotW; $x += $stepX) {
+                    imagecopy($canvas, $tileRot, $x + $offset, $y, 0, 0, $rotW, $rotH);
+                }
+            }
+
+            imagedestroy($tileRot);
+
+            $ok = imagepng($canvas, $outputPath);
+            imagedestroy($canvas);
+            if (! $ok) {
+                throw new RuntimeException("Falha ao salvar PNG do watermark em: {$outputPath}");
+            }
+        } finally {
+            if (is_resource($logo) || $logo instanceof \GdImage) imagedestroy($logo);
+        }
+    }
+
+    /**
+     * Monta um tile: logo redimensionada + sombra escura deslocada, ambas com
+     * opacidade reduzida.
+     *
+     * A composição é feita pixel a pixel (src-over manual) porque o blending do
+     * GD não resolve alpha sobre canvas transparente — copiar direto comeria a
+     * sombra nas áreas vazadas da logo. O tile é pequeno (~160x80), então o
+     * custo é irrelevante perto do encode.
+     */
+    private function comporTileLogo(\GdImage $logo, int $tileW, int $tileH): \GdImage
+    {
+        $desloc = max(1, (int) round($tileW * 0.012)); // sombra ~2px em 162
+
+        $escalada = imagecreatetruecolor($tileW, $tileH);
+        imagealphablending($escalada, false);
+        imagesavealpha($escalada, true);
+        imagefill($escalada, 0, 0, imagecolorallocatealpha($escalada, 0, 0, 0, 127));
+        imagecopyresampled($escalada, $logo, 0, 0, 0, 0, $tileW, $tileH, imagesx($logo), imagesy($logo));
+
+        $tile = imagecreatetruecolor($tileW + $desloc, $tileH + $desloc);
+        imagealphablending($tile, false);
+        imagesavealpha($tile, true);
+        imagefill($tile, 0, 0, imagecolorallocatealpha($tile, 0, 0, 0, 127));
+
+        // 1) Sombra: mesma silhueta pintada de preto, bem fraca — dá contorno
+        //    quando a cena atrás é clara e a logo branca sumiria.
+        $this->comporSobre($tile, $escalada, $desloc, $desloc, 0.30, true);
+        // 2) Logo por cima, "um pouco transparente"
+        $this->comporSobre($tile, $escalada, 0, 0, 0.45, false);
+
+        imagedestroy($escalada);
+
+        return $tile;
+    }
+
+    /**
+     * src-over manual de $src sobre $dst com fator de opacidade.
+     * $comoSombra pinta a silhueta de preto preservando o alpha da origem.
+     */
+    private function comporSobre(\GdImage $dst, \GdImage $src, int $dx, int $dy, float $opacidade, bool $comoSombra): void
+    {
+        $w = imagesx($src);
+        $h = imagesy($src);
+        $dstW = imagesx($dst);
+        $dstH = imagesy($dst);
+
+        for ($y = 0; $y < $h; $y++) {
+            $ty = $y + $dy;
+            if ($ty < 0 || $ty >= $dstH) continue;
+            for ($x = 0; $x < $w; $x++) {
+                $tx = $x + $dx;
+                if ($tx < 0 || $tx >= $dstW) continue;
+
+                $rgba = imagecolorat($src, $x, $y);
+                $a = ($rgba >> 24) & 0x7F;
+                if ($a === 127) continue; // pixel totalmente transparente
+
+                // GD: 0 = opaco, 127 = transparente. Converte pra 0..1.
+                $srcA = (1 - $a / 127) * $opacidade;
+                if ($srcA <= 0.002) continue;
+
+                if ($comoSombra) {
+                    $sr = $sg = $sb = 0;
+                } else {
+                    $sr = ($rgba >> 16) & 0xFF;
+                    $sg = ($rgba >> 8) & 0xFF;
+                    $sb = $rgba & 0xFF;
+                }
+
+                $destRgba = imagecolorat($dst, $tx, $ty);
+                $dstA = 1 - ((($destRgba >> 24) & 0x7F) / 127);
+                $dr = ($destRgba >> 16) & 0xFF;
+                $dg = ($destRgba >> 8) & 0xFF;
+                $db = $destRgba & 0xFF;
+
+                $outA = $srcA + $dstA * (1 - $srcA);
+                if ($outA <= 0.002) continue;
+
+                $r = (int) round(($sr * $srcA + $dr * $dstA * (1 - $srcA)) / $outA);
+                $g = (int) round(($sg * $srcA + $dg * $dstA * (1 - $srcA)) / $outA);
+                $b = (int) round(($sb * $srcA + $db * $dstA * (1 - $srcA)) / $outA);
+                $alphaGd = (int) round((1 - $outA) * 127);
+
+                $cor = imagecolorallocatealpha($dst, $r, $g, $b, max(0, min(127, $alphaGd)));
+                imagesetpixel($dst, $tx, $ty, $cor);
+                imagecolordeallocate($dst, $cor);
+            }
+        }
+    }
+
+    /**
+     * Fallback: texto do site tiled em diagonal (comportamento anterior).
+     * Halo branco dá contraste em cenas claras E escuras.
+     */
+    private function desenharTextoTiled(string $outputPath, int $width, int $height): void
     {
         if (! function_exists('imagettftext')) {
             throw new RuntimeException(

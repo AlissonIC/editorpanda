@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
@@ -14,6 +15,19 @@ class VideoMerge extends Model
     public const STATUS_PROCESSANDO = 'processando';
     public const STATUS_CONCLUIDO = 'concluido';
     public const STATUS_FALHOU = 'falhou';
+
+    /**
+     * Janela de retenção do arquivo concatenado, em dias.
+     *
+     * O merge é derivado — os vídeos individuais do pedido seguem disponíveis
+     * na área do comprador depois que ele expira, então isso não tira acesso
+     * a nada que foi comprado, só recicla storage de um arquivo regenerável
+     * (o comprador pode pedir a mescla de novo em "Minhas compras").
+     *
+     * Menor que a janela exibida na área do comprador (ver
+     * Comprador\ComprasController::DIAS_VITRINE) de propósito.
+     */
+    public const DIAS_RETENCAO = 60;
 
     protected $fillable = [
         'user_id',
@@ -28,6 +42,7 @@ class VideoMerge extends Model
         'erro_msg',
         'iniciado_em',
         'concluido_em',
+        'expira_em',
     ];
 
     protected function casts(): array
@@ -37,7 +52,19 @@ class VideoMerge extends Model
             'tamanho_bytes' => 'integer',
             'iniciado_em' => 'datetime',
             'concluido_em' => 'datetime',
+            'expira_em' => 'datetime',
         ];
+    }
+
+    /** Merges que já passaram da janela de retenção (alvo do panda:limpar-merges). */
+    public function scopeExpirados(Builder $query): Builder
+    {
+        return $query->where('expira_em', '<=', now());
+    }
+
+    public function expirou(): bool
+    {
+        return $this->expira_em !== null && $this->expira_em->isPast();
     }
 
     public function user(): BelongsTo
@@ -80,6 +107,9 @@ class VideoMerge extends Model
         static::creating(function (VideoMerge $merge) {
             if (empty($merge->slug)) {
                 $merge->slug = (string) Str::uuid();
+            }
+            if (empty($merge->expira_em)) {
+                $merge->expira_em = now()->addDays(self::DIAS_RETENCAO);
             }
         });
 

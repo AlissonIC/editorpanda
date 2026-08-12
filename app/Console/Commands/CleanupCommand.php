@@ -8,7 +8,8 @@ use Illuminate\Console\Command;
  * Roda a pipeline completa de limpeza:
  *   1. Cancela uploads abandonados > N horas
  *   2. Retenta órfãos da tabela arquivos_orfaos
- *   3. Scan reverso do storage (só reporta por default; --apagar remove)
+ *   3. Remove vídeos mesclados fora da janela de retenção
+ *   4. Scan reverso do storage (só reporta por default; --apagar remove)
  *
  * php artisan panda:cleanup
  * php artisan panda:cleanup --horas=48
@@ -39,14 +40,20 @@ class CleanupCommand extends Command
         ]);
 
         $this->newLine();
-        $this->info('[2/3] Órfãos registrados…');
+        $this->info('[2/4] Órfãos registrados…');
         $this->call('panda:limpar-orfaos', [
+            '--dry-run' => $dryRun,
+        ]);
+
+        $this->newLine();
+        $this->info('[3/4] Vídeos mesclados expirados…');
+        $this->call('panda:limpar-merges', [
             '--dry-run' => $dryRun,
         ]);
 
         if ($this->option('scan')) {
             $this->newLine();
-            $this->info('[3/3] Scan reverso do storage…');
+            $this->info('[4/4] Scan reverso do storage…');
             foreach (['local', 's3', 'public'] as $disk) {
                 $this->line("→ disk: {$disk}");
                 $this->call('panda:scan-armazenamento', [
@@ -56,7 +63,7 @@ class CleanupCommand extends Command
             }
         } else {
             $this->newLine();
-            $this->comment('[3/3] Scan reverso pulado (rode com --scan para ativar)');
+            $this->comment('[4/4] Scan reverso pulado (rode com --scan para ativar)');
         }
 
         $this->newLine();

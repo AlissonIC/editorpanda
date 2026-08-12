@@ -31,6 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const descontoLabel = document.getElementById('pv-desconto-label');
     const descontoEl = document.getElementById('pv-desconto');
     const totalEl = document.getElementById('pv-total'); // pode ser null se gratis
+    // Opt-in de mescla — ausente em álbum de edição manual (entrega é externa)
+    const mergeOpt = document.getElementById('pv-merge-opt');
+    const mergeCheck = document.getElementById('pv-form-mesclar');
+    const mergeCount = document.getElementById('pv-merge-count');
     const form = document.getElementById('pv-checkout-form');
     const whats = form.querySelector('[name="whatsapp"]');
     if (whats) bindPhone(whats);
@@ -61,6 +65,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (descontoLabel) descontoLabel.textContent = `Desconto (${pct}%)`;
         }
         btn.disabled = qtd === 0;
+
+        // Mesclar exige 2+. Ao cair pra 1, esconde E desmarca — senão a escolha
+        // ficaria invisível e ainda assim viajaria no payload.
+        if (mergeOpt) {
+            const podeMesclar = qtd >= 2;
+            mergeOpt.classList.toggle('d-none', !podeMesclar);
+            if (mergeCount) mergeCount.textContent = qtd;
+            if (!podeMesclar && mergeCheck) mergeCheck.checked = false;
+        }
 
         // Sincroniza a classe visual dos cards atualmente no DOM (novos cards
         // que forem adicionados via infinite scroll já entram com o estado
@@ -690,6 +703,7 @@ document.addEventListener('DOMContentLoaded', () => {
             whatsapp: form.whatsapp.value.trim() || null,
             video_ids: [...selectedIds],
             codigo_cupom: form.codigo_cupom?.value.trim().toUpperCase() || null,
+            mesclar: !!(mergeCheck && mergeCheck.checked && selectedIds.size >= 2),
         };
         const { data } = await axios.post(checkoutUrl, payload);
         return data;

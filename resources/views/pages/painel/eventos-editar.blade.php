@@ -205,10 +205,11 @@
         </div>
 
         <div class="col-lg-4">
-            {{-- Identidade visual: capa + logo unificados num único card compacto.
-                 Antes eram 2 cards enormes com preview 16:9 em cada — desperdiçava
-                 muito espaço vertical na sidebar. --}}
-            <div class="panda-card mb-4">
+            {{-- Card único da sidebar: identidade visual + ação de salvar.
+                 Capa e logo já eram um card compacto (antes eram 2 cards com
+                 preview 16:9 cada); agora dividem o mesmo bloco sticky do botão
+                 pra sidebar ter um só elemento acompanhando o scroll. --}}
+            <div class="panda-card mb-4 position-sticky" style="top: 90px;">
                 <h5 class="fw-bold mb-3">Identidade visual</h5>
 
                 {{-- CAPA — mini preview 16:9 lado do controle --}}
@@ -256,10 +257,10 @@
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {{-- Barra de ação --}}
-            <div class="panda-card mb-4 position-sticky" style="top: 90px;">
+                {{-- Ação de salvar — mesmo bloco, separada por régua. Capa e logo
+                     salvam sozinhas no upload; o botão é dos campos do form. --}}
+                <hr class="my-3">
                 <button type="submit" class="btn btn-dark-panda w-100 py-2 fw-bold">
                     <i class="bi bi-check-lg me-1"></i>Salvar alterações
                 </button>

@@ -47,6 +47,45 @@
         @endif
     </div>
 
+    @if($pedido->mesclar_solicitado && ! $edicaoManual)
+        {{-- Concat é assíncrono: aqui o comprador só acompanha. O arquivo fica
+             na área de compras dele (exige o link de acesso do e-mail). --}}
+        <div class="pv-checkout-card mx-auto mt-4" style="max-width: 640px;">
+            <div class="d-flex align-items-start gap-3">
+                <div style="font-size:1.6rem; line-height:1;">
+                    <i class="bi bi-collection-play"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="fw-bold mb-1">Seu vídeo único, com todos juntos</div>
+                    @if($merge?->status === 'concluido')
+                        <p class="small mb-2">Está pronto e disponível na sua área de compras.</p>
+                        @auth('comprador')
+                            <a class="btn btn-sm btn-dark" href="{{ route('publico.merge.download', $merge) }}">
+                                <i class="bi bi-download me-1"></i>Baixar vídeo único
+                            </a>
+                        @else
+                            <a class="btn btn-sm btn-outline-dark" href="{{ route('publico.minhas-compras') }}">
+                                Ir para minhas compras
+                            </a>
+                        @endauth
+                    @elseif($merge?->status === 'falhou')
+                        <p class="small mb-0 text-danger">
+                            Não conseguimos gerar o arquivo único desta vez. Seus vídeos individuais
+                            continuam disponíveis abaixo — e você pode pedir a junção de novo em
+                            "Minhas compras".
+                        </p>
+                    @else
+                        <p class="small mb-0 text-muted">
+                            <i class="bi bi-hourglass-split me-1"></i>
+                            Estamos montando o arquivo — costuma levar alguns minutos.
+                            Ele aparece na sua área de compras assim que ficar pronto.
+                        </p>
+                    @endif
+                </div>
+            </div>
+        </div>
+    @endif
+
     <div class="mt-5">
         <h5 class="fw-bold mb-3">{{ $edicaoManual ? 'Vídeos comprados' : 'Seus vídeos' }}</h5>
         <div class="row g-3">

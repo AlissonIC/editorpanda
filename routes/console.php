@@ -37,6 +37,13 @@ Schedule::command('panda:limpar-orfaos')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Vídeos mesclados fora da janela de retenção (VideoMerge::DIAS_RETENCAO).
+// Derivados — os vídeos individuais do pedido continuam disponíveis.
+Schedule::command('panda:limpar-merges')
+    ->dailyAt('03:20')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Retenção de logs — 7 dias
 // - failed_jobs: prune built-in do Laravel (--hours=168 = 7d)
 // - arquivos_orfaos resolvidos há > 7 dias somem

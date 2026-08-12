@@ -8,6 +8,7 @@ use App\Models\Pedido;
 use App\Models\User;
 use App\Notifications\CompraFinalizadaNotification;
 use App\Services\MercadoPagoService;
+use App\Services\PedidoMergeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -348,8 +349,19 @@ class PagamentoController extends Controller
             LogPagamento::info($lock, 'pedido.pago', "Total R$ {$lock->total} liberado");
         });
 
-        // Notificação fora da transaction — falhar aqui não deve reverter o pagamento.
+        // Fora da transaction — falhar aqui não pode reverter o pagamento.
         $pedido->refresh();
+
+        // Mescla opcional pedida no checkout. Idempotente: polling e notificação
+        // do MP podem cair aqui quase juntos.
+        try {
+            app(PedidoMergeService::class)->criarSeSolicitado($pedido);
+        } catch (\Throwable $e) {
+            \Log::warning('Falha ao enfileirar mescla do pedido', [
+                'pedido' => $pedido->id, 'erro' => $e->getMessage(),
+            ]);
+        }
+
         try {
             [$tokenPlano] = \App\Models\AcessoToken::gerarPara(
                 $pedido->comprador_email,

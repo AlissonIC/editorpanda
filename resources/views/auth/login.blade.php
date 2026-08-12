@@ -7,8 +7,7 @@
     <div class="card shadow-lg border-0" style="max-width: 420px; width: 92%;">
         <div class="card-body p-4 p-md-5">
             <div class="text-center mb-4">
-                <div style="font-size: 2.5rem;">🐼</div>
-                <h2 class="h4 mb-1 fw-bold">{{ config('app.name') }}</h2>
+                @include('theme::partials.logo', ['variante' => 'escura', 'altura' => 56, 'classe' => 'mb-2'])
                 <p class="text-muted small mb-0">Entre na sua conta</p>
             </div>
 

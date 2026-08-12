@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Exceptions\VideoProtegidoException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
@@ -172,28 +173,23 @@ class Video extends Model
             // Nunca deletar vídeo pago — comprador perderia acesso e o financeiro
             // ficaria inconsistente. Restrição espelhada no FK restrictOnDelete.
             if ($video->temPedidosPagos()) {
-                throw new \RuntimeException(
+                throw new VideoProtegidoException(
                     'Vídeo tem pedidos pagos e não pode ser excluído. Considere ocultar do álbum.'
                 );
             }
 
-            $disco = $video->disk ?: 'local';
+            // O FK de pedido_itens é RESTRICT: sem limpar os itens de pedidos NÃO
+            // pagos (carrinho abandonado / cancelado), o DELETE estoura 1451 e o
+            // vídeo fica impossível de remover. Só chega aqui quem passou no
+            // temPedidosPagos(), então nenhum item de pedido pago é tocado.
+            $video->desvincularDePedidosNaoPagos();
+        });
 
-            // Remove todos os arquivos associados COM verificação redundante:
-            // se qualquer um falhar em sumir, é registrado em arquivos_orfaos
-            // para retry pelo comando `panda:limpar-orfaos`.
-            foreach (array_filter([
-                $video->arquivo_original_path,
-                $video->arquivo_processado_path,
-                $video->arquivo_preview_path,
-                $video->thumbnail_path,
-            ]) as $path) {
-                \App\Support\StorageCleanup::deleteAndVerify($disco, $path, 'video_delete');
-            }
-
-            // Sempre desconta — bytes são reservados no init do upload, então
-            // apagar em qualquer status (enviando, pendente, processando, concluído)
-            // libera a cota.
+        // Arquivos e cota só depois que a linha REALMENTE sumiu (e o commit
+        // passou). Fazer isso no `deleting` deixava arquivo apagado + linha viva
+        // sempre que o DELETE falhava — vídeo quebrado e cota descontada à toa.
+        static::deleted(function (Video $video) {
+            // Cota participa da mesma transação do DELETE: se der rollback, volta.
             if ($video->tamanho_bytes > 0) {
                 DB::table('users')
                     ->where('id', $video->user_id)
@@ -203,6 +199,57 @@ class Video extends Model
                         ),
                     ]);
             }
+
+            $disco = $video->disk ?: 'local';
+            $paths = array_filter([
+                $video->arquivo_original_path,
+                $video->arquivo_processado_path,
+                $video->arquivo_preview_path,
+                $video->thumbnail_path,
+            ]);
+
+            // afterCommit: fora de transação roda na hora; dentro (bulkDelete),
+            // espera o commit — rollback não pode levar os arquivos junto.
+            DB::afterCommit(function () use ($disco, $paths) {
+                // Verificação redundante: se algum arquivo não sumir, vai pra
+                // arquivos_orfaos e o `panda:limpar-orfaos` tenta de novo.
+                foreach ($paths as $path) {
+                    \App\Support\StorageCleanup::deleteAndVerify($disco, $path, 'video_delete');
+                }
+            });
         });
+    }
+
+    /**
+     * Remove o vídeo dos itens de pedidos não pagos (pendente/cancelado) e
+     * cancela pedidos que ficaram sem nenhum item — evita pedido fantasma
+     * de valor zerado na listagem do cliente.
+     */
+    private function desvincularDePedidosNaoPagos(): void
+    {
+        $pedidoIds = DB::table('pedido_itens')
+            ->where('video_id', $this->id)
+            ->pluck('pedido_id')
+            ->unique();
+
+        if ($pedidoIds->isEmpty()) {
+            return;
+        }
+
+        DB::table('pedido_itens')->where('video_id', $this->id)->delete();
+
+        $vazios = DB::table('pedidos')
+            ->whereIn('id', $pedidoIds)
+            ->where('status', '!=', Pedido::STATUS_PAGO)
+            ->whereNotExists(fn ($q) => $q->select(DB::raw(1))
+                ->from('pedido_itens')
+                ->whereColumn('pedido_itens.pedido_id', 'pedidos.id'))
+            ->pluck('id');
+
+        if ($vazios->isNotEmpty()) {
+            DB::table('pedidos')
+                ->whereIn('id', $vazios)
+                ->update(['status' => Pedido::STATUS_CANCELADO, 'updated_at' => now()]);
+        }
     }
 }

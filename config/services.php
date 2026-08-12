@@ -44,8 +44,11 @@ return [
         // Fonte TTF/OTF usada pelo drawtext no preview. Se vazio, auto-detecta
         // (Windows: arial; Linux: DejaVuSans). Sempre pode ser sobrescrito pelo .env.
         'font' => env('WATERMARK_FONT'),
-        // Texto que aparece tiled no preview. Default = APP_NAME.
+        // Texto que aparece tiled no preview. Só é usado como FALLBACK, quando
+        // a logo não pode ser lida.
         'texto' => env('WATERMARK_TEXTO', env('APP_NAME', 'PANDAVIDEO')),
+        // PNG da logo tiled no preview. Vazio = public/img/logo-clara.png.
+        'logo' => env('WATERMARK_LOGO'),
     ],
 
     'mercadopago' => [

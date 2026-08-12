@@ -15,16 +15,40 @@ use Illuminate\View\View;
 
 class ComprasController extends Controller
 {
-    public function index(): View
+    /**
+     * Janela padrão da vitrine de compras. Nada é apagado por causa dela — o
+     * histórico completo continua a um clique (`?tudo=1`); a listagem recente
+     * é só o default, que é o que 99% dos compradores procuram ao voltar.
+     */
+    private const DIAS_VITRINE = 90;
+
+    public function index(Request $request): View
     {
         $comprador = auth('comprador')->user();
-        $pedidos = $comprador->pedidos()
-            ->with(['album:id,nome,slug', 'itens.video:id,nome,status,thumbnail_path,disk,arquivo_processado_path,duracao_segundos'])
-            ->orderByDesc('id')
-            ->get();
+
+        $tudo = $request->boolean('tudo');
+        $query = $comprador->pedidos()
+            ->with([
+                'album:id,nome,slug',
+                'itens.video:id,nome,status,thumbnail_path,disk,arquivo_processado_path,duracao_segundos',
+                'merges',
+            ])
+            ->orderByDesc('id');
+
+        if (! $tudo) {
+            $query->where('created_at', '>=', now()->subDays(self::DIAS_VITRINE));
+        }
+
+        $pedidos = $query->get();
 
         return view('pages.publico.minhas-compras', [
             'pedidos' => $pedidos,
+            'tudo' => $tudo,
+            'diasVitrine' => self::DIAS_VITRINE,
+            // Só oferece "ver anteriores" se existir algo fora da janela.
+            'temAnteriores' => $comprador->pedidos()
+                ->where('created_at', '<', now()->subDays(self::DIAS_VITRINE))
+                ->exists(),
         ]);
     }
 
@@ -138,6 +162,9 @@ class ComprasController extends Controller
         $comprador = auth('comprador')->user();
         abort_unless($merge->comprador_id === $comprador->id, 403);
         abort_unless($merge->status === VideoMerge::STATUS_CONCLUIDO && $merge->output_path, 404);
+        // Fora da janela de retenção o arquivo pode ainda estar no disco (a
+        // limpeza é diária) — o link já não vale.
+        abort_if($merge->expirou(), 404);
 
         $nome = $merge->nomeArquivoDownload();
         $disk = $merge->disk ?: 'local';

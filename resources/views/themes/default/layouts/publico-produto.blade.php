@@ -12,9 +12,8 @@
 
 <nav class="pv-navbar">
     <div class="container d-flex align-items-center justify-content-between py-3">
-        <a href="{{ url('/') }}" class="d-flex align-items-center gap-2 text-decoration-none">
-            <span style="font-size: 1.5rem;">🐼</span>
-            <span class="fw-bold text-dark">{{ config('app.name') }}</span>
+        <a href="{{ url('/') }}" class="d-flex align-items-center text-decoration-none">
+            @include('theme::partials.logo', ['variante' => 'escura', 'altura' => 42])
         </a>
         <div class="d-flex gap-2 align-items-center">
             @auth('comprador')

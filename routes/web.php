@@ -82,7 +82,11 @@ Route::name('publico.')->group(function () {
     Route::get('/acessar/{token}', [Publico\AcessoController::class, 'validar'])
         ->middleware('throttle:30,10')
         ->name('acesso.validar');
-    Route::post('/sair', [Publico\AcessoController::class, 'logout'])->name('acesso.logout');
+    // URI própria: `POST /sair` é do guard web (routes/auth.php, carregado no
+    // fim deste arquivo) e sobrescrevia esta rota — o nome sumia da collection
+    // e o layout do comprador quebrava com "Route [publico.acesso.logout] not
+    // defined" em toda página da área de compras.
+    Route::post('/comprador/sair', [Publico\AcessoController::class, 'logout'])->name('acesso.logout');
 
     // Área do comprador (auth guard = comprador)
     Route::middleware('auth:comprador')->group(function () {

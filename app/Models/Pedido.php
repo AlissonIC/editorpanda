@@ -30,6 +30,7 @@ class Pedido extends Model
         'desconto_cupom',
         'desconto_quantidade',
         'status',
+        'mesclar_solicitado',
         'gateway_id',
         'gateway_status',
         'payment_method',
@@ -44,6 +45,7 @@ class Pedido extends Model
     {
         return [
             'total' => 'decimal:2',
+            'mesclar_solicitado' => 'boolean',
             'desconto_cupom' => 'decimal:2',
             'desconto_quantidade' => 'decimal:2',
             'pix_expires_at' => 'datetime',
@@ -75,5 +77,10 @@ class Pedido extends Model
     public function comprador(): BelongsTo
     {
         return $this->belongsTo(Comprador::class);
+    }
+
+    public function merges(): HasMany
+    {
+        return $this->hasMany(VideoMerge::class);
     }
 }

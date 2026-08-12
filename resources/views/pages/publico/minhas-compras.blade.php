@@ -4,21 +4,47 @@
 
 @section('conteudo')
 <section class="container py-5">
-    <div class="d-flex justify-content-between align-items-baseline mb-4">
-        <h2 class="fw-bold mb-0">Minhas compras</h2>
+    <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2 mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">Minhas compras</h2>
+            <div class="text-muted small mt-1">
+                {{ $tudo ? 'Todo o histórico' : 'Compras dos últimos ' . $diasVitrine . ' dias' }}
+                @if($temAnteriores)
+                    ·
+                    <a class="text-muted" href="{{ $tudo ? route('publico.minhas-compras') : route('publico.minhas-compras', ['tudo' => 1]) }}">
+                        {{ $tudo ? 'ver só as recentes' : 'ver compras anteriores' }}
+                    </a>
+                @endif
+            </div>
+        </div>
         <span class="text-muted small">{{ auth('comprador')->user()->email }}</span>
     </div>
 
     @if($pedidos->isEmpty())
         <div class="pv-empty">
             <i class="bi bi-bag"></i>
-            <p>Você ainda não tem compras.</p>
+            <p>
+                @if($temAnteriores && ! $tudo)
+                    Nenhuma compra nos últimos {{ $diasVitrine }} dias.
+                @else
+                    Você ainda não tem compras.
+                @endif
+            </p>
+            @if($temAnteriores && ! $tudo)
+                <a class="btn btn-sm btn-outline-dark" href="{{ route('publico.minhas-compras', ['tudo' => 1]) }}">
+                    Ver compras anteriores
+                </a>
+            @endif
         </div>
     @endif
 
     @foreach($pedidos as $pedido)
         @php
             $videosConcluidos = $pedido->itens->filter(fn ($i) => $i->video?->status === 'concluido');
+            // Merges vivos: expirados saem da vitrine antes mesmo da limpeza
+            // diária passar, pra não oferecer download que já não resolve.
+            $merges = $pedido->merges->reject->expirou()->sortByDesc('id');
+            $temMergeAtivo = $merges->contains(fn ($m) => in_array($m->status, ['pendente', 'processando', 'concluido'], true));
         @endphp
         <div class="pv-checkout-card mb-4" data-pedido-id="{{ $pedido->id }}">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -32,8 +58,11 @@
                 <div class="fw-bold">R$ {{ number_format((float) $pedido->total, 2, ',', '.') }}</div>
             </div>
 
-            @if($videosConcluidos->count() >= 2)
-                <div class="alert alert-light border d-flex justify-content-between align-items-center mb-3">
+            {{-- Oferta de junção — escondida enquanto existe um merge ativo, pra
+                 não gerar arquivo duplicado. Reaparece se ele falhar ou sair da
+                 vitrine, funcionando como o "gerar de novo". --}}
+            @if($videosConcluidos->count() >= 2 && ! $temMergeAtivo)
+                <div class="alert alert-light border d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
                     <div class="small">
                         <i class="bi bi-collection-play me-1"></i>
                         Quer receber <strong>todos os {{ $videosConcluidos->count() }} vídeos em um arquivo só</strong>?
@@ -41,29 +70,27 @@
                     <button type="button" class="btn btn-sm btn-dark js-merge-solicitar"
                             data-url="{{ route('publico.pedido.merge.solicitar', $pedido) }}"
                             data-video-ids="{{ $videosConcluidos->pluck('video_id')->toJson() }}">
-                        Mesclar
+                        Juntar em um vídeo
                     </button>
                 </div>
             @endif
 
-            {{-- Merges pendentes/prontos deste pedido --}}
-            @foreach(\App\Models\VideoMerge::where('pedido_id', $pedido->id)->orderByDesc('id')->get() as $merge)
-                <div class="alert alert-{{ $merge->status === 'concluido' ? 'success' : ($merge->status === 'falhou' ? 'danger' : 'info') }} d-flex justify-content-between align-items-center mb-3">
+            @foreach($merges as $merge)
+                <div class="alert alert-{{ $merge->status === 'concluido' ? 'success' : ($merge->status === 'falhou' ? 'danger' : 'info') }} d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
                     <div class="small">
-                        <strong>Mescla #{{ $merge->id }}</strong>
-                        · {{ count($merge->video_ids) }} vídeos
-                        · <span data-merge-status-label>{{ ucfirst($merge->status) }}</span>
-                        @if($merge->erro_msg)
-                            <div class="mt-1 text-danger">{{ $merge->erro_msg }}</div>
+                        <strong><i class="bi bi-collection-play me-1"></i>Vídeo único</strong>
+                        · {{ count($merge->video_ids) }} vídeos juntos
+                        @if($merge->status === 'falhou')
+                            <div class="mt-1">Não foi possível gerar desta vez. Tente pedir novamente.</div>
                         @endif
                     </div>
                     @if($merge->status === 'concluido')
                         <a class="btn btn-sm btn-dark" href="{{ route('publico.merge.download', $merge) }}">
-                            <i class="bi bi-download me-1"></i>Baixar mesclado
+                            <i class="bi bi-download me-1"></i>Baixar vídeo único
                         </a>
                     @elseif(in_array($merge->status, ['pendente','processando']))
                         <span class="small text-muted" data-merge-poll="{{ route('publico.merge.status', $merge) }}">
-                            <i class="bi bi-hourglass-split me-1"></i>Processando…
+                            <i class="bi bi-hourglass-split me-1"></i>Preparando…
                         </span>
                     @endif
                 </div>
