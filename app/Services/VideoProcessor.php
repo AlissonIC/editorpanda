@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Album;
 use App\Models\LogProcessamento;
 use App\Models\Video;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Symfony\Component\Process\Process;
@@ -39,6 +40,13 @@ class VideoProcessor
     // 4 workers competiriam por 12 cores e context switch destruiria o ganho.
     // 3 threads × 4 workers = 12 cores dedicados, 4 vídeos em paralelo.
     private const OUT_THREADS = 3;
+
+    // Teto do ORIGINAL guardado quando o navegador não reduziu (ver
+    // normalizarOriginal). A saída entregue é sempre 1080x1920, então guardar
+    // 4K só consome cota — mas mantemos 1920 pro dono ainda ter margem de
+    // reenquadramento ao girar/reprocessar.
+    private const ORIGINAL_LADO_MAX = 1920;
+    private const ORIGINAL_CRF = 23;
 
     // Qualidade JPEG do processado de imagem (2-31, menor = melhor; 3 = alta).
     private const JPG_QUALITY = 3;
@@ -113,6 +121,17 @@ class VideoProcessor
             // 4) Probe
             $meta = $this->probe($inputPath);
 
+            // 4.1) Normalização do original quando o navegador não reduziu.
+            // Roda ANTES do encode principal: além de liberar cota, o encode
+            // passa a decodificar Full HD em vez de 4K.
+            if (! $isImagem && $video->otimizar_servidor) {
+                $normalizado = $this->normalizarOriginal($video, $inputPath, $tempDir, $meta);
+                if ($normalizado !== null) {
+                    $inputPath = $normalizado;
+                    $meta = $this->probe($inputPath);
+                }
+            }
+
             // 5) Config comum
             $config['rotacao'] = (int) ($video->rotacao ?? 0);
             $config['espelhado'] = (bool) ($video->espelhado ?? false);
@@ -163,23 +182,155 @@ class VideoProcessor
                 'erro_msg' => null,
             ];
 
-            // 10) Thumbnail — fallback server-side quando o browser não conseguiu
-            // gerar (típico com HEIC: browsers não decodificam, extractImageThumbnail
-            // falha, thumbnail_path fica NULL). Refetch pra pegar update do browser
-            // que pode ter chegado entre o dispatch e agora.
+            // 10) Thumbnail — SEMPRE regerada a partir do processado.
+            //
+            // A do browser é tirada do arquivo cru, antes de rotação/espelhamento:
+            // girar o vídeo deixava a miniatura deitada pra sempre. O processado
+            // já saiu com a transformação aplicada (e com logo/gradiente), então
+            // é a única fonte que bate com o que o comprador vê.
+            //
+            // Ela não é desperdício: aparece no card durante o upload, enquanto o
+            // processamento nem começou. Aqui só damos a palavra final.
+            // Refetch porque o POST /thumbnail do browser pode ter chegado entre
+            // o dispatch e agora.
             $video->refresh();
-            if (empty($video->thumbnail_path)) {
+            try {
                 $thumbLocal = $tempDir . DIRECTORY_SEPARATOR . 'thumb.jpg';
                 $thumbSource = $outputPath; // processed (mp4 ou jpg — ffmpeg lida com ambos)
                 $this->buildThumbnail($thumbSource, $thumbLocal, $isImagem, $meta['duration'] ?? 0);
                 $thumbRel = "thumbnails/{$video->user_id}/video-{$video->id}.jpg";
                 $this->uploadToDisk($video->disk ?: 'local', $thumbLocal, $thumbRel);
                 $update['thumbnail_path'] = $thumbRel;
+            } catch (\Throwable $e) {
+                // Miniatura é acessório: não derruba um encode que já deu certo.
+                // Sem ela o vídeo fica com a do browser (ou com o ícone padrão).
+                LogProcessamento::warning('thumb.regeneracao_falhou', $e->getMessage(), [
+                    'video_id' => $video->id,
+                ]);
             }
 
             $video->update($update);
         } finally {
             $this->rmrf($tempDir);
+        }
+    }
+
+    /**
+     * Reduz o ORIGINAL guardado para no máximo 1920px no maior lado.
+     *
+     * Só roda quando o upload veio marcado com `otimizar_servidor` — ou seja,
+     * quando o navegador não conseguiu reduzir (iOS, aba em segundo plano…).
+     * Sem isso a cota do fotógrafo fica presa num 4K que nunca é entregue: a
+     * saída processada é sempre 1080x1920.
+     *
+     * Funciona igual nos dois discos: download/upload passam por
+     * downloadFromDisk/uploadToDisk, que já abstraem local e S3.
+     *
+     * Devolve o caminho local do arquivo normalizado, ou null quando não havia
+     * o que fazer (já estava pequeno) ou quando falhou — nunca lança, porque
+     * isto é economia de espaço, não parte da entrega.
+     */
+    private function normalizarOriginal(Video $video, string $inputPath, string $tempDir, array $meta): ?string
+    {
+        $largura = (int) ($meta['width'] ?? 0);
+        $altura = (int) ($meta['height'] ?? 0);
+        $maiorLado = max($largura, $altura);
+
+        // Já está dentro do teto: só limpa a flag pra não reavaliar em reprocessos.
+        if ($maiorLado <= self::ORIGINAL_LADO_MAX || $largura < 1 || $altura < 1) {
+            $video->update(['otimizar_servidor' => false]);
+            return null;
+        }
+
+        try {
+            $escala = self::ORIGINAL_LADO_MAX / $maiorLado;
+            $novaL = max(2, (int) (round($largura * $escala / 2) * 2));
+            $novaA = max(2, (int) (round($altura * $escala / 2) * 2));
+
+            $saidaLocal = $tempDir . DIRECTORY_SEPARATOR . 'original-fhd.mp4';
+            $this->runFFmpeg([
+                $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
+                '-i', $inputPath,
+                '-vf', "scale={$novaL}:{$novaA}:flags=lanczos",
+                '-c:v', 'libx264',
+                // veryfast de propósito: é arquivo intermediário (o que o comprador
+                // recebe sai do encode principal), então velocidade vale mais que
+                // os poucos % de compressão extra.
+                '-preset', 'veryfast',
+                '-crf', (string) self::ORIGINAL_CRF,
+                '-threads', (string) self::OUT_THREADS,
+                '-pix_fmt', 'yuv420p',
+                '-movflags', '+faststart',
+                // aac sempre: copiar a faixa arriscaria codec que não cabe em mp4
+                // (pcm de mkv, por exemplo) e o custo de reencodar áudio é baixo.
+                '-c:a', 'aac', '-b:a', self::OUT_AUDIO_BITRATE,
+                $saidaLocal,
+            ]);
+
+            $bytesNovo = (int) (filesize($saidaLocal) ?: 0);
+            $bytesAntigo = (int) $video->tamanho_bytes;
+            if ($bytesNovo < 1024) {
+                throw new RuntimeException('saída da normalização vazia');
+            }
+
+            // Reduzir e ficar MAIOR não é impossível (fonte muito comprimida).
+            // Nesse caso ficar com o original é o melhor negócio.
+            if ($bytesNovo >= $bytesAntigo) {
+                LogProcessamento::info('original.normalizacao_sem_ganho', 'Normalização não encolheu — mantido o original', [
+                    'video_id' => $video->id,
+                    'bytes_original' => $bytesAntigo,
+                    'bytes_normalizado' => $bytesNovo,
+                ]);
+                $video->update(['otimizar_servidor' => false]);
+                return null;
+            }
+
+            // Key nova (o original pode ser .mov/.mkv): grava o arquivo inteiro
+            // antes de apontar o banco pra ele, e só então apaga o antigo. Se
+            // algo falhar no meio, o vídeo continua com um original válido.
+            $disco = $video->disk ?: 'local';
+            $pathAntigo = $video->arquivo_original_path;
+            $pathNovo = preg_replace('/\.[^.\/]+$/', '', $pathAntigo) . '-fhd.mp4';
+            $this->uploadToDisk($disco, $saidaLocal, $pathNovo);
+
+            DB::transaction(function () use ($video, $pathNovo, $bytesNovo, $bytesAntigo) {
+                $video->update([
+                    'arquivo_original_path' => $pathNovo,
+                    'tamanho_bytes' => $bytesNovo,
+                    'otimizar_servidor' => false,
+                ]);
+
+                // Devolve a diferença pra cota do plano.
+                $liberado = $bytesAntigo - $bytesNovo;
+                if ($liberado > 0) {
+                    DB::table('users')
+                        ->where('id', $video->user_id)
+                        ->update([
+                            'armazenamento_bytes' => DB::raw(
+                                'GREATEST(CAST(armazenamento_bytes AS SIGNED) - ' . $liberado . ', 0)'
+                            ),
+                        ]);
+                }
+            });
+
+            \App\Support\StorageCleanup::deleteAndVerify($disco, $pathAntigo, 'original_normalizado');
+
+            LogProcessamento::info('original.normalizado', 'Original reduzido no servidor', [
+                'video_id' => $video->id,
+                'disk' => $disco,
+                'de' => "{$largura}x{$altura}",
+                'para' => "{$novaL}x{$novaA}",
+                'bytes_antes' => $bytesAntigo,
+                'bytes_depois' => $bytesNovo,
+            ]);
+
+            return $saidaLocal;
+        } catch (\Throwable $e) {
+            // Economia de espaço não pode derrubar a entrega: segue com o original.
+            LogProcessamento::warning('original.normalizacao_falhou', $e->getMessage(), [
+                'video_id' => $video->id,
+            ]);
+            return null;
         }
     }
 

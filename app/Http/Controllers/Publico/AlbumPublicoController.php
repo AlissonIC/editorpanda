@@ -31,7 +31,7 @@ class AlbumPublicoController extends Controller
         // Isso evita renderizar 500 cards em álbuns grandes (HTML enorme,
         // paint travado, dezenas de MB de thumbnails baixadas de cara).
         $videosDb = $baseQuery
-            ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path'])
+            ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path', 'updated_at'])
             ->orderBy('id')
             ->limit(self::PAGE_SIZE)
             ->get();
@@ -66,7 +66,7 @@ class AlbumPublicoController extends Controller
         $videosDb = $album->videos()
             ->where('status', 'concluido')
             ->when($after > 0, fn ($q) => $q->where('id', '>', $after))
-            ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path'])
+            ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path', 'updated_at'])
             ->orderBy('id')
             ->limit($limit)
             ->get();
@@ -90,7 +90,9 @@ class AlbumPublicoController extends Controller
             'is_imagem' => str_ends_with(strtolower((string) $v->arquivo_preview_path), '.jpg')
                         || str_ends_with(strtolower((string) $v->arquivo_preview_path), '.jpeg'),
             'duracao' => $this->formatDuration((int) $v->duracao_segundos),
-            'thumbnail_url' => $v->thumbnail_path ? route('publico.video.thumb', $v->id) : null,
+            'thumbnail_url' => $v->thumbnail_path
+                ? route('publico.video.thumb', ['video' => $v->id, 'v' => $v->thumbVersao()])
+                : null,
             'preview_url' => route('publico.video.preview', $v->id),
         ];
     }

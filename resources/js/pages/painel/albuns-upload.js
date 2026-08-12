@@ -664,13 +664,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // sem esta guarda o envio começaria depois do usuário desistir.
         if (item.status !== 'uploading') return;
 
-        // Só agora dá pra saber o tamanho final — um 4K de 400 MB vira ~50 MB,
-        // mas se mesmo assim passar do teto, não adianta tentar enviar.
+        // Só agora dá pra saber o tamanho final. Passar do teto é o ÚNICO caso
+        // que vira mensagem: aí o arquivo realmente não sobe. Não ter otimizado
+        // não é erro — vai a flag e o servidor resolve.
         if (item.file.size > MAX_BYTES) {
             item.status = 'error';
-            item.error = reducao.reduzido
-                ? 'Mesmo otimizado passa de 300 MB. Envie um trecho menor.'
-                : 'Excede o limite de 300 MB.';
+            item.error = `Arquivo de ${humanSize(item.file.size)} — o limite é 300 MB.`;
             paintQueueItem(item);
             updateCounter();
             return;
@@ -678,6 +677,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         item.task = new UploadTask({
             file: item.file,
+            otimizarNoServidor: reducao.precisaServidor,
             albumInitUrl: initUrl,
             onProgress: (pct) => { item.progress = pct; paintQueueItem(item); },
             onStatus: (st, extra) => {

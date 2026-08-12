@@ -95,7 +95,7 @@
                     <div class="pv-video-card">
                         <div class="pv-video-thumb">
                             @if($v->thumbnail_path)
-                                <img src="{{ route('publico.video.thumb', $v->id) }}" alt="">
+                                <img src="{{ route('publico.video.thumb', ['video' => $v->id, 'v' => $v->thumbVersao()]) }}" alt="">
                             @else
                                 <i class="bi bi-film"></i>
                             @endif

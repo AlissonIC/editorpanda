@@ -19,8 +19,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  *   - Local (signed=false): POST FormData(arquivo, part_number) pro servidor Laravel
  */
 export class UploadTask {
-    constructor({ file, albumInitUrl, onProgress, onStatus }) {
+    constructor({ file, albumInitUrl, onProgress, onStatus, otimizarNoServidor = false }) {
         this.file = file;
+        // Navegador não conseguiu reduzir: o processamento normaliza o original.
+        this.otimizarNoServidor = !!otimizarNoServidor;
         this.albumInitUrl = albumInitUrl;
         this.onProgress = onProgress || (() => {});
         this.onStatus = onStatus || (() => {});
@@ -115,6 +117,7 @@ export class UploadTask {
             content_type: this.file.type || 'video/mp4',
             chunk_size: chunkSize,
             total_parts: totalParts,
+            otimizar_servidor: this.otimizarNoServidor,
         });
 
         this.videoId = data.video_id;

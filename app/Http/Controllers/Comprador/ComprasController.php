@@ -30,7 +30,8 @@ class ComprasController extends Controller
         $query = $comprador->pedidos()
             ->with([
                 'album:id,nome,slug',
-                'itens.video:id,nome,status,thumbnail_path,disk,arquivo_processado_path,duracao_segundos',
+                // updated_at entra por causa do ?v= da miniatura (Video::thumbVersao)
+                'itens.video:id,nome,status,thumbnail_path,disk,arquivo_processado_path,duracao_segundos,updated_at',
                 'merges',
             ])
             ->orderByDesc('id');

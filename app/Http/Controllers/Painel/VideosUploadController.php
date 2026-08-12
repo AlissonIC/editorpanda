@@ -47,6 +47,10 @@ class VideosUploadController extends Controller
             'content_type' => ['required', 'string', 'in:' . implode(',', self::MIMES)],
             'chunk_size' => ['required', 'integer', 'min:' . self::CHUNK_MIN, 'max:' . self::CHUNK_MAX],
             'total_parts' => ['required', 'integer', 'min:1', 'max:' . self::PARTS_MAX],
+            // O navegador reduz 4K -> Full HD antes de subir. Quando não dá
+            // (Safari do iOS não tem captureStream, aba em segundo plano, etc.),
+            // ele manda true aqui e o processamento normaliza o original.
+            'otimizar_servidor' => ['sometimes', 'boolean'],
         ]);
 
         // Álbum define se aceita vídeo OU imagem (exclusivo — evita misturar
@@ -117,6 +121,7 @@ class VideosUploadController extends Controller
                 // uma vez e todo upload já vai correto no processamento.
                 'rotacao' => (int) ($album->rotacao_padrao ?? 0),
                 'espelhado' => (bool) ($album->espelhado_padrao ?? false),
+                'otimizar_servidor' => (bool) ($data['otimizar_servidor'] ?? false),
             ]);
 
             // Nome padronizado (img_/vid_{id}.ext) — depende do ID auto-increment,
@@ -660,7 +665,7 @@ class VideosUploadController extends Controller
         $perPage = (int) min(50, max(5, $request->input('per_page', 20)));
         $paginator = $album->videos()
             ->with('album:id,evento_id,nome', 'album.evento:id,nome')
-            ->select(['id', 'album_id', 'nome', 'status', 'disk', 'tamanho_bytes', 'thumbnail_path', 'arquivo_original_path', 'rotacao', 'espelhado', 'created_at'])
+            ->select(['id', 'album_id', 'nome', 'status', 'disk', 'tamanho_bytes', 'thumbnail_path', 'arquivo_original_path', 'rotacao', 'espelhado', 'created_at', 'updated_at'])
             ->orderByDesc('id')
             ->paginate($perPage);
 
@@ -882,7 +887,9 @@ class VideosUploadController extends Controller
             'disk' => $v->disk,
             'tamanho_bytes' => (int) $v->tamanho_bytes,
             'tamanho_humano' => $this->formatBytes((int) $v->tamanho_bytes),
-            'thumbnail_url' => $v->thumbnail_path ? route('painel.videos.thumbnail.serve', $v) : null,
+            'thumbnail_url' => $v->thumbnail_path
+                ? route('painel.videos.thumbnail.serve', ['video' => $v, 'v' => $v->thumbVersao()])
+                : null,
             'rotacao' => (int) $v->rotacao,
             'espelhado' => (bool) $v->espelhado,
             'is_imagem' => $this->pathEhImagem($v->arquivo_original_path),

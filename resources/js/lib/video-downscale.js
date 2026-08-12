@@ -65,9 +65,14 @@ function carregarVideo(url) {
  * quando não deu (ou não valeu a pena) reduzir.
  */
 export async function reduzirVideo(file, { onProgress = () => {}, ladoMax = LADO_MAX } = {}) {
-    const original = { file, reduzido: false, motivo: null };
+    // `precisaServidor` viaja no /init: quando o navegador não deu conta, quem
+    // normaliza é o processamento. Nada disso vira erro na tela — o upload
+    // segue normal, só mais pesado.
+    const original = { file, reduzido: false, motivo: null, precisaServidor: true };
 
-    if (!file.type?.startsWith('video/')) return { ...original, motivo: 'não é vídeo' };
+    if (!file.type?.startsWith('video/')) {
+        return { ...original, motivo: 'não é vídeo', precisaServidor: false };
+    }
     if (!suportaReducao()) return { ...original, motivo: 'navegador sem suporte' };
 
     const tipoSaida = melhorTipoSaida();
@@ -86,7 +91,7 @@ export async function reduzirVideo(file, { onProgress = () => {}, ladoMax = LADO
 
         if (!larguraEntrada || !alturaEntrada) return { ...original, motivo: 'dimensões desconhecidas' };
         if (Math.max(larguraEntrada, alturaEntrada) <= ladoMax) {
-            return { ...original, motivo: 'já está dentro do limite' };
+            return { ...original, motivo: 'já está dentro do limite', precisaServidor: false };
         }
         if (!isFinite(duracao) || duracao <= 0) return { ...original, motivo: 'duração desconhecida' };
         if (duracao > DURACAO_MAX_S) return { ...original, motivo: 'vídeo longo demais pra otimizar' };
@@ -158,6 +163,8 @@ export async function reduzirVideo(file, { onProgress = () => {}, ladoMax = LADO
         const blob = new Blob(pedacos, { type: tipoSaida.split(';')[0] });
         if (!blob.size) return { ...original, motivo: 'gravação vazia' };
         if (blob.size > file.size * GANHO_MINIMO) {
+            // Regravar não encolheu — mas o arquivo continua acima do limite de
+            // pixels, então o servidor ainda tem o que normalizar.
             return { ...original, motivo: 'sem ganho de tamanho' };
         }
 
@@ -168,6 +175,7 @@ export async function reduzirVideo(file, { onProgress = () => {}, ladoMax = LADO
         return {
             file: new File([blob], nome, { type: blob.type, lastModified: Date.now() }),
             reduzido: true,
+            precisaServidor: false,
             motivo: `${larguraEntrada}x${alturaEntrada} → ${largura}x${altura}`,
         };
     } catch (e) {

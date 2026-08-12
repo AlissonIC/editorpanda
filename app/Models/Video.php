@@ -58,6 +58,7 @@ class Video extends Model
         'duracao_segundos',
         'rotacao',
         'espelhado',
+        'otimizar_servidor',
         'processado_em',
     ];
 
@@ -73,6 +74,7 @@ class Video extends Model
             'duracao_segundos' => 'integer',
             'rotacao' => 'integer',
             'espelhado' => 'boolean',
+            'otimizar_servidor' => 'boolean',
         ];
     }
 
@@ -103,6 +105,18 @@ class Video extends Model
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * Sufixo de cache da miniatura. Muda a cada gravação do vídeo — o que inclui
+     * o reprocessamento, quando a thumb é regerada com a rotação aplicada.
+     *
+     * Sem isso a URL da miniatura é fixa e o browser continua mostrando a versão
+     * antiga (deitada) depois de girar o vídeo.
+     */
+    public function thumbVersao(): int
+    {
+        return (int) ($this->updated_at?->timestamp ?? 0);
     }
 
     public function temPedidosPagos(): bool
