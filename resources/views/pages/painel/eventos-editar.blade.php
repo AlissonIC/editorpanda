@@ -168,7 +168,12 @@
                     <div class="col-md-5">
                         <div class="reels-phone mx-auto">
                             <div class="reels-phone-notch"></div>
-                            <div class="reels-screen" style="background-image: url('{{ asset('img/reels-preview.jpg') }}');">
+                            {{-- Fundo escuro neutro em vez de uma foto qualquer: o que
+                                 importa aqui é ler a posição/escala da marca d'água do
+                                 vendedor, e uma cena real competia com ela. --}}
+                            <div class="reels-screen reels-screen--marca">
+                                <img class="reels-screen-marca" src="{{ asset('img/logo-clara.png') }}" alt="" aria-hidden="true">
+
                                 <div class="reels-gradient {{ $evento->gradiente_habilitado ? '' : 'd-none' }}"
                                      id="reels-gradient"
                                      data-position="{{ $evento->watermark_posicao ?? 'top-right' }}"></div>
