@@ -480,6 +480,25 @@ class VideosUploadController extends Controller
             'Vídeo ainda em upload — envie a thumbnail após finalizar.',
         );
 
+        // A miniatura do navegador sai do arquivo cru: não tem a rotação manual
+        // nem, em parte dos casos, a rotação de metadados que o player aplica
+        // sozinho. Ela serve só como provisória, até o processamento gerar a
+        // definitiva a partir do vídeo processado.
+        //
+        // O POST daqui sai DEPOIS do /complete, que já enfileirou o job — em
+        // vídeo curto com worker ocioso o processamento termina primeiro e esta
+        // requisição sobrescrevia a miniatura correta. Era o "vídeo virado pra
+        // um lado e thumb pro outro", intermitente por ser uma corrida.
+        //
+        // Não é erro: o upload deu certo, só chegou tarde. 200 e segue.
+        if ($video->processado_em !== null || $video->status === Video::STATUS_PROCESSANDO) {
+            return response()->json([
+                'thumbnail_path' => $video->thumbnail_path,
+                'ignorado' => true,
+                'motivo' => 'processamento já gerou a miniatura definitiva',
+            ]);
+        }
+
         $request->validate([
             'thumbnail' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:512'], // 512 KB
         ]);
