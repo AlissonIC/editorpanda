@@ -73,10 +73,15 @@
                 @endif
 
                 <div class="d-flex gap-2 flex-wrap" id="acoes-assinatura">
-                    <button type="button" class="btn btn-dark-panda" data-action="renovar">
-                        <i class="bi bi-arrow-clockwise me-1"></i>
-                        Renovar por 30 dias (R$ {{ number_format((float) $assinaturaAtual->preco_pago, 2, ',', '.') }})
-                    </button>
+                    @if($assinaturaAtual->plano_id)
+                        {{-- Renovar é o mesmo checkout de assinar: o backend
+                             reconhece que é o plano vigente e trata como renovação. --}}
+                        <button type="button" class="btn btn-dark-panda js-checkout-plano"
+                                data-plano="{{ $assinaturaAtual->plano_id }}">
+                            <i class="bi bi-arrow-clockwise me-1"></i>
+                            Renovar por 30 dias (R$ {{ number_format((float) $assinaturaAtual->preco_pago, 2, ',', '.') }})
+                        </button>
+                    @endif
                     <button type="button" class="btn btn-outline-danger" data-action="cancelar">
                         <i class="bi bi-x-circle me-1"></i> Cancelar
                     </button>
@@ -122,11 +127,9 @@
                                     <li><i class="bi bi-check2"></i> {{ number_format((float) $p->taxa_por_venda, 2, ',', '.') }}% de taxa por venda</li>
                                 </ul>
                                 <button type="button"
-                                        class="btn {{ $atual ? 'btn-outline-secondary' : 'btn-dark' }} w-100 rounded-pill py-2"
-                                        data-assinar="{{ $p->id }}"
-                                        data-nome="{{ $p->nome }}"
-                                        {{ $atual ? 'disabled' : '' }}>
-                                    {{ $atual ? 'Plano atual' : ($assinaturaAtual ? 'Trocar para este' : 'Assinar') }}
+                                        class="btn {{ $atual ? 'btn-outline-dark' : 'btn-dark' }} w-100 rounded-pill py-2 js-checkout-plano"
+                                        data-plano="{{ $p->id }}">
+                                    {{ $atual ? 'Renovar este plano' : ($assinaturaAtual ? 'Trocar para este' : 'Assinar') }}
                                 </button>
                             </div>
                         </div>
@@ -189,9 +192,14 @@
                 <tbody>
                     @foreach($historico as $a)
                         <tr>
-                            <td class="fw-semibold">{{ $a->plano_nome }}</td>
-                            <td>{{ $a->iniciado_em->format('d/m/Y') }}</td>
-                            <td>{{ $a->expira_em->format('d/m/Y') }}</td>
+                            <td class="fw-semibold">
+                                {{ $a->plano_nome }}
+                                <div class="small text-muted">{{ $a->tipoLabel() }}</div>
+                            </td>
+                            {{-- Datas podem faltar em registro antigo — nunca vale
+                                 derrubar a tela por causa do histórico. --}}
+                            <td>{{ $a->iniciado_em?->format('d/m/Y') ?? '—' }}</td>
+                            <td>{{ $a->expira_em?->format('d/m/Y') ?? '—' }}</td>
                             <td class="text-end">R$ {{ number_format((float) $a->preco_pago, 2, ',', '.') }}</td>
                             <td class="text-center">
                                 @php
@@ -212,6 +220,183 @@
             </table>
         </div>
     @endif
+</div>
+{{-- ===== Checkout do plano ===== --}}
+<div class="modal fade" id="modal-checkout" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content ck-modal">
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <span class="badge rounded-pill" id="ck-tipo-badge">Assinatura</span>
+                    <h5 class="modal-title fw-bold mt-2 mb-0" id="ck-titulo">Confirmar plano</h5>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+
+            <div class="modal-body pt-2">
+                {{-- Carregando o resumo --}}
+                <div id="ck-carregando" class="text-center py-5">
+                    <div class="spinner-border text-secondary" role="status"></div>
+                    <p class="small text-muted mt-2 mb-0">Montando seu pedido…</p>
+                </div>
+
+                <div id="ck-conteudo" class="d-none">
+                    <div class="row g-4">
+                        {{-- Coluna esquerda: o que está sendo comprado --}}
+                        <div class="col-lg-5">
+                            <div class="ck-resumo">
+                                <div class="small text-muted text-uppercase">Plano escolhido</div>
+                                <div class="h5 fw-bold mb-1" id="ck-plano-nome"></div>
+                                <p class="small text-muted mb-3" id="ck-plano-desc"></p>
+
+                                <ul class="list-unstyled small mb-3" id="ck-plano-itens"></ul>
+
+                                {{-- Só aparece em troca de plano: antes → depois --}}
+                                <div id="ck-comparacao" class="d-none">
+                                    <div class="small text-muted text-uppercase mb-1">O que muda</div>
+                                    <table class="table table-sm small mb-3" id="ck-comparacao-tabela"></table>
+                                </div>
+
+                                <div class="ck-vigencia small">
+                                    <i class="bi bi-calendar-check me-1"></i>
+                                    <span id="ck-vigencia-texto"></span>
+                                </div>
+
+                                <div id="ck-avisos" class="mt-3"></div>
+                            </div>
+                        </div>
+
+                        {{-- Coluna direita: pagamento --}}
+                        <div class="col-lg-7">
+                            <div class="ck-total d-flex justify-content-between align-items-baseline mb-3">
+                                <span class="text-muted">Total a pagar</span>
+                                <span class="h4 fw-bold mb-0" id="ck-total"></span>
+                            </div>
+
+                            {{-- Etapa 1: dados de cobrança --}}
+                            <div id="ck-etapa-dados">
+                                <div class="row g-2">
+                                    <div class="col-sm-6">
+                                        <label class="form-label small mb-1">CPF <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="ck-cpf" inputmode="numeric"
+                                               autocomplete="off" maxlength="14" placeholder="000.000.000-00">
+                                        <div class="invalid-feedback" id="ck-cpf-erro"></div>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small mb-1">Telefone</label>
+                                        <input type="text" class="form-control" id="ck-telefone" inputmode="tel"
+                                               autocomplete="tel" maxlength="20" placeholder="(00) 00000-0000">
+                                    </div>
+                                </div>
+
+                                <button type="button" class="btn btn-link btn-sm px-0 mt-2" id="ck-toggle-endereco">
+                                    <i class="bi bi-chevron-right me-1" id="ck-chevron"></i>
+                                    Endereço de cobrança <span class="text-muted">(opcional)</span>
+                                </button>
+                                <div class="d-none" id="ck-endereco">
+                                    <p class="small text-muted mb-2">
+                                        Não é obrigatório, mas ajuda o banco a aprovar o cartão.
+                                    </p>
+                                    <div class="row g-2">
+                                        <div class="col-4">
+                                            <label class="form-label small mb-1">CEP</label>
+                                            <input type="text" class="form-control form-control-sm" id="ck-cep" maxlength="9" inputmode="numeric">
+                                        </div>
+                                        <div class="col-8">
+                                            <label class="form-label small mb-1">Logradouro</label>
+                                            <input type="text" class="form-control form-control-sm" id="ck-logradouro" maxlength="150">
+                                        </div>
+                                        <div class="col-4">
+                                            <label class="form-label small mb-1">Número</label>
+                                            <input type="text" class="form-control form-control-sm" id="ck-numero" maxlength="20">
+                                        </div>
+                                        <div class="col-8">
+                                            <label class="form-label small mb-1">Complemento</label>
+                                            <input type="text" class="form-control form-control-sm" id="ck-complemento" maxlength="100">
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="form-label small mb-1">Bairro</label>
+                                            <input type="text" class="form-control form-control-sm" id="ck-bairro" maxlength="100">
+                                        </div>
+                                        <div class="col-4">
+                                            <label class="form-label small mb-1">Cidade</label>
+                                            <input type="text" class="form-control form-control-sm" id="ck-cidade" maxlength="100">
+                                        </div>
+                                        <div class="col-2">
+                                            <label class="form-label small mb-1">UF</label>
+                                            <input type="text" class="form-control form-control-sm" id="ck-estado" maxlength="2">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button type="button" class="btn btn-dark-panda w-100 mt-3" id="ck-continuar">
+                                    Continuar para o pagamento
+                                </button>
+                            </div>
+
+                            {{-- Etapa 2: forma de pagamento --}}
+                            <div id="ck-etapa-pagamento" class="d-none">
+                                <div class="ck-metodos mb-3">
+                                    <button type="button" class="ck-metodo is-active" data-metodo="pix">
+                                        <i class="bi bi-qr-code"></i>
+                                        <span>PIX</span>
+                                        <small>Aprovação na hora</small>
+                                    </button>
+                                    <button type="button" class="ck-metodo" data-metodo="cartao">
+                                        <i class="bi bi-credit-card"></i>
+                                        <span>Cartão</span>
+                                        <small>Até 12x</small>
+                                    </button>
+                                </div>
+
+                                {{-- PIX --}}
+                                <div id="ck-pix">
+                                    <div class="text-center" id="ck-pix-carregando">
+                                        <div class="spinner-border spinner-border-sm text-secondary"></div>
+                                        <p class="small text-muted mt-2">Gerando o código PIX…</p>
+                                    </div>
+                                    <div class="d-none" id="ck-pix-pronto">
+                                        <div class="text-center">
+                                            <img id="ck-pix-qr" alt="QR Code PIX" class="ck-qr">
+                                        </div>
+                                        <p class="small text-muted text-center mt-2 mb-2">
+                                            Abra o app do banco, escaneie o código e a liberação é automática.
+                                        </p>
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control" id="ck-pix-codigo" readonly>
+                                            <button class="btn btn-outline-secondary" type="button" id="ck-pix-copiar">
+                                                <i class="bi bi-clipboard me-1"></i>Copiar
+                                            </button>
+                                        </div>
+                                        <div class="small text-muted mt-2 text-center" id="ck-pix-expira"></div>
+                                    </div>
+                                </div>
+
+                                {{-- Cartão (Bricks do Mercado Pago) --}}
+                                <div id="ck-cartao" class="d-none">
+                                    <div id="ck-cartao-brick"></div>
+                                </div>
+
+                                <div class="alert alert-danger py-2 small mt-3 d-none" id="ck-erro"></div>
+
+                                <div class="d-flex align-items-center justify-content-center gap-2 small text-muted mt-3">
+                                    <i class="bi bi-shield-lock"></i>
+                                    Pagamento processado pelo Mercado Pago.
+                                </div>
+                            </div>
+
+                            {{-- Etapa 3: aprovado --}}
+                            <div id="ck-etapa-ok" class="d-none text-center py-4">
+                                <i class="bi bi-check-circle-fill text-success" style="font-size:3rem;"></i>
+                                <h5 class="fw-bold mt-3 mb-1">Pagamento aprovado!</h5>
+                                <p class="text-muted small mb-0" id="ck-ok-texto"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 @endsection
 

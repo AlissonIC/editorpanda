@@ -2,15 +2,18 @@
 
 namespace App\Services;
 
+use App\Contracts\CobravelMp;
 use App\Models\LogPagamento;
-use App\Models\Pedido;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
  * Cliente do Mercado Pago para checkout transparente.
+ *
+ * Atende qualquer coisa que implemente CobravelMp — hoje `Pedido` (venda de
+ * vídeo) e `Assinatura` (plano do dono do evento). O serviço não sabe a
+ * diferença: pergunta valor, descrição, pagador e referência.
  *
  * NÃO usa webhook — o polling client-side é o mecanismo de sync
  * (ver PagamentoController::status). O objetivo é manter a integração
@@ -44,27 +47,23 @@ class MercadoPagoService
      * Cria um pagamento PIX. Retorna o QR code (imagem base64 + código
      * copia-e-cola) que o frontend renderiza pro comprador.
      */
-    public function criarPagamentoPix(Pedido $pedido): array
+    public function criarPagamentoPix(CobravelMp $cobranca): array
     {
         $payload = array_filter([
-            'transaction_amount' => (float) $pedido->total,
-            'description' => $this->descricaoPedido($pedido),
+            'transaction_amount' => $cobranca->mpValor(),
+            'description' => $cobranca->mpDescricao(),
             'payment_method_id' => 'pix',
-            'external_reference' => (string) $pedido->id,
+            'external_reference' => $cobranca->mpReferenciaExterna(),
             'notification_url' => $this->notificationUrl() ?: null,
             'date_of_expiration' => now()->addMinutes($this->pixExpiraMinutos)->format('Y-m-d\TH:i:s.vP'),
-            'payer' => [
-                'email' => $pedido->comprador_email,
-                'first_name' => Str::of($pedido->comprador_nome)->before(' ')->limit(60, ''),
-                'last_name' => Str::of($pedido->comprador_nome)->after(' ')->limit(60, '') ?: '.',
-            ],
+            'payer' => $cobranca->mpPagador(),
         ], fn ($v) => $v !== null);
 
-        $response = $this->post('/v1/payments', $payload, $this->idempotencyKey($pedido, 'pix'));
+        $response = $this->post('/v1/payments', $payload, $cobranca->mpChaveIdempotencia('pix'));
         $data = $response->json() ?? [];
 
         LogPagamento::info(
-            $pedido,
+            $cobranca,
             'pix.criado',
             'PIX gerado no MP',
             $this->sanitize($payload),
@@ -72,7 +71,7 @@ class MercadoPagoService
         );
 
         if (! $response->successful() || empty($data['id'])) {
-            LogPagamento::error($pedido, 'pix.erro', 'MP não retornou payment_id', $payload, $data);
+            LogPagamento::error($cobranca, 'pix.erro', 'MP não retornou payment_id', $payload, $data);
             throw new RuntimeException('Falha ao gerar PIX no Mercado Pago.');
         }
 
@@ -94,35 +93,39 @@ class MercadoPagoService
      * Processa um pagamento com CARTÃO usando o token gerado pelo Bricks
      * no frontend. O CVV/número nunca chega ao backend — o token é one-time-use.
      */
-    public function criarPagamentoCartao(Pedido $pedido, array $dados): array
+    public function criarPagamentoCartao(CobravelMp $cobranca, array $dados): array
     {
+        $pagador = $cobranca->mpPagador();
+
+        // O CPF do Bricks (titular do cartão) tem precedência sobre o cadastrado:
+        // alguns bancos recusam quando o documento não é o do titular.
+        if (isset($dados['identification'])) {
+            $pagador['identification'] = [
+                'type' => 'CPF',
+                'number' => preg_replace('/\D/', '', $dados['identification']),
+            ];
+        }
+
         $payload = [
-            'transaction_amount' => (float) $pedido->total,
-            'description' => $this->descricaoPedido($pedido),
-            'external_reference' => (string) $pedido->id,
+            'transaction_amount' => $cobranca->mpValor(),
+            'description' => $cobranca->mpDescricao(),
+            'external_reference' => $cobranca->mpReferenciaExterna(),
             'notification_url' => $this->notificationUrl(),
             'token' => $dados['token'],
             'installments' => (int) ($dados['installments'] ?? 1),
             'payment_method_id' => $dados['payment_method_id'] ?? null,
             'issuer_id' => $dados['issuer_id'] ?? null,
-            'payer' => [
-                'email' => $pedido->comprador_email,
-                // MP exige identificação do titular do cartão pra alguns bancos.
-                // Se o Bricks capturou o CPF, envia; senão MP infere do token.
-                'identification' => isset($dados['identification'])
-                    ? ['type' => 'CPF', 'number' => preg_replace('/\D/', '', $dados['identification'])]
-                    : null,
-            ],
+            'payer' => $pagador,
         ];
         // Remove chaves nulas — MP rejeita alguns valores null
         $payload = array_filter($payload, fn ($v) => $v !== null && $v !== '');
         $payload['payer'] = array_filter($payload['payer'], fn ($v) => $v !== null && $v !== '');
 
-        $response = $this->post('/v1/payments', $payload, $this->idempotencyKey($pedido, 'cartao'));
+        $response = $this->post('/v1/payments', $payload, $cobranca->mpChaveIdempotencia('cartao'));
         $data = $response->json() ?? [];
 
         LogPagamento::info(
-            $pedido,
+            $cobranca,
             'cartao.enviado',
             'Cartão enviado ao MP',
             $this->sanitize($payload),
@@ -130,7 +133,7 @@ class MercadoPagoService
         );
 
         if (! $response->successful() || empty($data['id'])) {
-            LogPagamento::error($pedido, 'cartao.erro', 'MP não retornou payment_id', $this->sanitize($payload), $data);
+            LogPagamento::error($cobranca, 'cartao.erro', 'MP não retornou payment_id', $this->sanitize($payload), $data);
             throw new RuntimeException($data['message'] ?? 'Falha ao processar cartão no Mercado Pago.');
         }
 
@@ -145,13 +148,13 @@ class MercadoPagoService
     /**
      * Consulta o estado atual de um payment (usado no polling).
      */
-    public function consultarPagamento(string $paymentId, ?Pedido $pedido = null): array
+    public function consultarPagamento(string $paymentId, ?CobravelMp $cobranca = null): array
     {
         $response = $this->get("/v1/payments/{$paymentId}");
         $data = $response->json() ?? [];
 
         if (! $response->successful()) {
-            LogPagamento::warning($pedido, 'status.consulta_falhou', "MP {$response->status()}", null, $data);
+            LogPagamento::warning($cobranca, 'status.consulta_falhou', "MP {$response->status()}", null, $data);
             throw new RuntimeException('Falha ao consultar status no Mercado Pago.');
         }
 
@@ -160,12 +163,6 @@ class MercadoPagoService
             'status_detail' => $data['status_detail'] ?? null,
             'raw' => $data,
         ];
-    }
-
-    private function descricaoPedido(Pedido $pedido): string
-    {
-        $qtd = $pedido->itens()->count();
-        return "Pedido #{$pedido->id} — {$qtd} " . ($qtd === 1 ? 'item' : 'itens');
     }
 
     /**
@@ -190,16 +187,6 @@ class MercadoPagoService
         } catch (\Throwable) {
             return '';
         }
-    }
-
-    /**
-     * Chave de idempotência — MP dedupe requests com mesma chave nas últimas 24h.
-     * Fundamental pra evitar cobrar 2x se a request falhar por timeout e o front
-     * retentar (comportamento comum em rede móvel instável).
-     */
-    private function idempotencyKey(Pedido $pedido, string $tipo): string
-    {
-        return "pedido-{$pedido->id}-{$tipo}-" . $pedido->created_at?->format('YmdHis');
     }
 
     private function post(string $path, array $payload, string $idempotencyKey): Response

@@ -224,12 +224,30 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
         // Assinatura — plano ativo + histórico + renovação
         Route::get('saques', [Painel\SaquesController::class, 'index'])->name('saques.index');
         Route::get('saques/data', [Painel\SaquesController::class, 'data'])->name('saques.data');
-        Route::post('saques', [Painel\SaquesController::class, 'store'])->name('saques.store');
+        // Throttle: o lock já impede estourar o saldo, mas sem teto dá pra
+        // martelar a rota e encher a tabela de saques de R$ 20.
+        Route::post('saques', [Painel\SaquesController::class, 'store'])
+            ->middleware('throttle:10,1')
+            ->name('saques.store');
 
         Route::get('assinatura', [Painel\AssinaturaController::class, 'index'])->name('assinatura.index');
-        Route::post('assinatura/assinar/{plano}', [Painel\AssinaturaController::class, 'assinar'])->name('assinatura.assinar');
-        Route::post('assinatura/renovar', [Painel\AssinaturaController::class, 'renovar'])->name('assinatura.renovar');
         Route::post('assinatura/cancelar', [Painel\AssinaturaController::class, 'cancelar'])->name('assinatura.cancelar');
+
+        // Checkout do plano (PIX/cartão via Mercado Pago). Substituiu os antigos
+        // POST assinar/renovar, que ativavam o plano sem cobrar nada.
+        Route::get('assinatura/checkout/{plano}', [Painel\AssinaturaCheckoutController::class, 'resumo'])
+            ->name('assinatura.checkout.resumo');
+        Route::post('assinatura/checkout/{plano}', [Painel\AssinaturaCheckoutController::class, 'iniciar'])
+            ->middleware('throttle:20,1')
+            ->name('assinatura.checkout.iniciar');
+        Route::post('assinatura/cobranca/{assinatura}/pix', [Painel\AssinaturaCheckoutController::class, 'criarPix'])
+            ->middleware('throttle:20,1')
+            ->name('assinatura.checkout.pix');
+        Route::post('assinatura/cobranca/{assinatura}/cartao', [Painel\AssinaturaCheckoutController::class, 'pagarCartao'])
+            ->middleware('throttle:20,1')
+            ->name('assinatura.checkout.cartao');
+        Route::get('assinatura/cobranca/{assinatura}/status', [Painel\AssinaturaCheckoutController::class, 'status'])
+            ->name('assinatura.checkout.status');
     });
 
     // Admin-only

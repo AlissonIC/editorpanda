@@ -25,7 +25,11 @@ class SaquesController extends Controller
     public function index(): View
     {
         $user = auth()->user();
-        return view('pages.painel.saques', ['saldo' => (float) $user->saldo_disponivel]);
+
+        return view('pages.painel.saques', [
+            'saldo' => (float) $user->saldo_disponivel,
+            'minimo' => self::VALOR_MINIMO,
+        ]);
     }
 
     public function data(Request $request): JsonResponse
@@ -46,7 +50,10 @@ class SaquesController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'valor' => ['required', 'numeric', 'min:' . self::VALOR_MINIMO, 'max:999999.99'],
+            // `decimal:0,2` porque a coluna é decimal(12,2): sem isso, um valor
+            // como 20,005 seria debitado com um arredondamento e gravado com
+            // outro — o saque e o débito deixariam de bater por centavos.
+            'valor' => ['required', 'numeric', 'decimal:0,2', 'min:' . self::VALOR_MINIMO, 'max:999999.99'],
             'dados_bancarios' => ['required', 'array'],
             'dados_bancarios.tipo' => ['required', 'in:pix,ted'],
             'dados_bancarios.chave' => ['required_if:dados_bancarios.tipo,pix', 'nullable', 'string', 'max:150'],
@@ -60,37 +67,39 @@ class SaquesController extends Controller
         $userId = auth()->id();
         $valorCents = (int) round((float) $data['valor'] * 100);
 
+        // A conferência de saldo é AQUI, não no formulário. O campo do painel
+        // avisa cedo, mas usa o saldo de quando a página carregou — que pode
+        // estar velho (outra aba, outro saque, venda estornada) e é trivial de
+        // burlar chamando a API direto.
+        //
         // Lock no user para evitar race: dois POSTs simultâneos poderiam
         // ambos ver saldo >= valor e criar 2 saques, estourando o saldo.
-        try {
-            $saque = DB::transaction(function () use ($userId, $data, $valorCents) {
-                $user = User::whereKey($userId)->lockForUpdate()->first();
-                $saldoCents = (int) round((float) $user->saldo_disponivel * 100);
+        $saque = DB::transaction(function () use ($userId, $data, $valorCents) {
+            $user = User::whereKey($userId)->lockForUpdate()->first();
+            $saldoCents = (int) round((float) $user->saldo_disponivel * 100);
 
-                if ($valorCents > $saldoCents) {
-                    abort(response()->json([
-                        'message' => 'Saldo insuficiente.',
-                        'errors' => ['valor' => ['Saldo disponível é R$ ' . number_format($user->saldo_disponivel, 2, ',', '.')]],
-                    ], 422));
-                }
+            if ($valorCents > $saldoCents) {
+                abort(response()->json([
+                    'message' => 'Saldo insuficiente.',
+                    'errors' => ['valor' => ['Saldo disponível é R$ ' . number_format($user->saldo_disponivel, 2, ',', '.')]],
+                ], 422));
+            }
 
-                // Debita o saldo (reserva) — só será liberado se admin recusar.
-                DB::table('users')->where('id', $userId)->update([
-                    'saldo_disponivel' => DB::raw("saldo_disponivel - ({$valorCents} / 100)"),
-                ]);
+            // Debita o saldo (reserva) — só será liberado se admin recusar.
+            DB::table('users')->where('id', $userId)->update([
+                'saldo_disponivel' => DB::raw("saldo_disponivel - ({$valorCents} / 100)"),
+            ]);
 
-                return Saque::create([
-                    'user_id' => $userId,
-                    'valor' => (float) $data['valor'],
-                    'status' => 'solicitado',
-                    'dados_bancarios' => $data['dados_bancarios'],
-                    'observacao' => $data['observacao'] ?? null,
-                    'solicitado_em' => now(),
-                ]);
-            });
-        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
-            throw $e;
-        }
+            return Saque::create([
+                'user_id' => $userId,
+                // Mesmo número que saiu do saldo, não o texto que veio no POST.
+                'valor' => $valorCents / 100,
+                'status' => 'solicitado',
+                'dados_bancarios' => $data['dados_bancarios'],
+                'observacao' => $data['observacao'] ?? null,
+                'solicitado_em' => now(),
+            ]);
+        });
 
         return response()->json(['message' => 'Saque solicitado.', 'saque' => $saque], 201);
     }

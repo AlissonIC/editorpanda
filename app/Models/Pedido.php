@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Contracts\CobravelMp;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
-class Pedido extends Model
+class Pedido extends Model implements CobravelMp
 {
     // Fluxo do pedido pago:
     //   PENDENTE → PAGO (via polling do MP OU notificação /pagamento/notificacao)
@@ -77,6 +79,46 @@ class Pedido extends Model
     public function comprador(): BelongsTo
     {
         return $this->belongsTo(Comprador::class);
+    }
+
+    // ---------------------------------------------------------------
+    // CobravelMp — o que o Mercado Pago precisa saber deste pedido
+    // ---------------------------------------------------------------
+
+    public function mpValor(): float
+    {
+        return (float) $this->total;
+    }
+
+    public function mpDescricao(): string
+    {
+        $qtd = $this->itens()->count();
+
+        return "Pedido #{$this->id} — {$qtd} " . ($qtd === 1 ? 'item' : 'itens');
+    }
+
+    /**
+     * Id puro, sem prefixo. Payments criados antes da interface CobravelMp
+     * existir já estão no MP com esse formato e ainda podem notificar —
+     * mudar aqui quebraria o reencontro deles.
+     */
+    public function mpReferenciaExterna(): string
+    {
+        return (string) $this->id;
+    }
+
+    public function mpPagador(): array
+    {
+        return [
+            'email' => $this->comprador_email,
+            'first_name' => Str::of($this->comprador_nome)->before(' ')->limit(60, ''),
+            'last_name' => Str::of($this->comprador_nome)->after(' ')->limit(60, '') ?: '.',
+        ];
+    }
+
+    public function mpChaveIdempotencia(string $metodo): string
+    {
+        return "pedido-{$this->id}-{$metodo}-" . $this->created_at?->format('YmdHis');
     }
 
     public function merges(): HasMany

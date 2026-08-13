@@ -35,21 +35,44 @@
 
 <div class="modal fade" id="modalSaque" tabindex="-1">
     <div class="modal-dialog">
-        <form id="form-saque" class="modal-content" novalidate>
+        {{-- data-saldo/data-minimo em formato cru (ponto decimal) — o JS compara
+             número, não texto formatado. É só pra avisar o usuário cedo: quem
+             manda no limite é o servidor, que relê o saldo com lock. --}}
+        <form id="form-saque" class="modal-content" novalidate
+              data-saldo="{{ number_format($saldo, 2, '.', '') }}"
+              data-minimo="{{ number_format($minimo, 2, '.', '') }}">
             @csrf
             <div class="modal-header">
                 <h5 class="modal-title">Solicitar saque</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="small text-muted">Valor mínimo R$ 20,00. Saldo atual:
+                @if($saldo < $minimo)
+                    <div class="alert alert-warning py-2 small mb-3">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Seu saldo disponível é <strong>R$ {{ number_format($saldo, 2, ',', '.') }}</strong> e o
+                        saque mínimo é R$ {{ number_format($minimo, 2, ',', '.') }}.
+                    </div>
+                @endif
+
+                <p class="small text-muted">Valor mínimo R$ {{ number_format($minimo, 2, ',', '.') }}. Saldo atual:
                     <strong>R$ {{ number_format($saldo, 2, ',', '.') }}</strong>.
                 </p>
 
                 <div class="mb-3">
-                    <label class="form-label small">Valor</label>
+                    <div class="d-flex justify-content-between align-items-baseline">
+                        <label class="form-label small mb-1">Valor</label>
+                        @if($saldo >= $minimo)
+                            <button type="button" id="saque-tudo" class="btn btn-link btn-sm p-0 small">
+                                Sacar tudo
+                            </button>
+                        @endif
+                    </div>
                     <input type="text" name="valor" data-mask="money" class="form-control" required>
                     <div class="invalid-feedback" data-field="valor"></div>
+                    <div class="form-text small" id="saque-disponivel">
+                        Disponível para saque: R$ {{ number_format($saldo, 2, ',', '.') }}
+                    </div>
                 </div>
 
                 <div class="mb-3">
@@ -94,7 +117,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" class="btn btn-dark-panda">Enviar solicitação</button>
+                <button type="submit" class="btn btn-dark-panda" id="saque-enviar">Enviar solicitação</button>
             </div>
         </form>
     </div>

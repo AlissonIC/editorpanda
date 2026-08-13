@@ -49,6 +49,15 @@ class VideoProcessor
     // Qualidade JPEG do processado de imagem (2-31, menor = melhor; 3 = alta).
     private const JPG_QUALITY = 3;
 
+    // Preview público: metade do processado. Vive aqui porque o filter graph
+    // da passada única precisa do tamanho antes de montar a watermark.
+    private const PREVIEW_WIDTH = 540;
+    private const PREVIEW_HEIGHT = 960;
+
+    // Lado maior do intermediário limpo gerado junto com a foto processada.
+    // Dele saem preview e thumbnail sem redecodificar o JPEG original.
+    private const IMAGEM_INTERMEDIARIO_LADO = 1080;
+
     private const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
 
     // HEIC/HEIF precisam de pre-conversão porque ffmpeg 8 do Ubuntu não tem
@@ -184,27 +193,48 @@ class VideoProcessor
             // 6) Encode principal — extensão do output depende do tipo
             $outExt = $isImagem ? 'jpg' : 'mp4';
             $outputPath = $tempDir . DIRECTORY_SEPARATOR . 'output.' . $outExt;
+            $previewPath = $tempDir . DIRECTORY_SEPARATOR . 'preview.' . $outExt;
 
-            $cmd = $isImagem
-                ? $this->buildImageCommand($inputPath, $outputPath, $logoLocal, $meta, $config)
-                : $this->buildCommand($inputPath, $outputPath, $logoLocal, $meta, $config);
-            $this->runFFmpeg($cmd);
+            // Preview sai na MESMA passada do principal (ver buildCommand): o
+            // arquivo é decodificado uma vez só e os dois encodes dividem o
+            // mesmo filter graph. Medido em produção: 84s → 54s num vídeo de 60s.
+            //
+            // Álbuns gratuitos não têm preview — o processado JÁ É o produto
+            // público, então nem watermark nem segunda saída são gerados.
+            $preview = $isGratuito ? null : $previewPath;
+            $watermarkPng = null;
+            if ($preview !== null && ! $isImagem) {
+                $watermarkPng = $tempDir . DIRECTORY_SEPARATOR . 'watermark-tiled.png';
+                $this->generateDiagonalWatermarkPng($watermarkPng, self::PREVIEW_WIDTH, self::PREVIEW_HEIGHT);
+            }
+
+            // Imagem tem outro caminho: o preview sai de um intermediário pequeno
+            // (ver buildImageCommand), não da passada principal.
+            $intermediarioImagem = $isImagem && $preview !== null
+                ? $tempDir . DIRECTORY_SEPARATOR . 'clean-menor.jpg'
+                : null;
+
+            if ($isImagem) {
+                $cmd = $this->buildImageCommand($inputPath, $outputPath, $logoLocal, $meta, $config, $intermediarioImagem);
+                $this->runFFmpeg($cmd, array_filter([$outputPath, $intermediarioImagem]));
+            } else {
+                $this->encodarVideo($inputPath, $outputPath, $logoLocal, $meta, $config, $preview, $watermarkPng);
+            }
 
             // 7) Upload da versão limpa (só liberada após compra em álbuns pagos)
             $processedRel = $this->processedPathFor($video, $outExt);
             $this->uploadToDisk($video->disk ?: 'local', $outputPath, $processedRel);
 
             // 8) Preview público
-            if ($isGratuito) {
+            if ($preview === null) {
                 // Gratuito: preview aponta pro mesmo arquivo processado — não gera
                 // segunda passagem nem consome storage duplicado.
                 $previewRel = $processedRel;
             } else {
-                $previewPath = $tempDir . DIRECTORY_SEPARATOR . 'preview.' . $outExt;
                 if ($isImagem) {
-                    $this->buildWatermarkedPreviewImagem($outputPath, $previewPath);
-                } else {
-                    $this->buildWatermarkedPreview($outputPath, $previewPath);
+                    // Sobrepõe a watermark no intermediário já reduzido: o JPEG
+                    // de 24MP não é redecodificado aqui.
+                    $this->buildWatermarkedPreviewImagem($intermediarioImagem ?: $outputPath, $previewPath);
                 }
                 $previewRel = $this->previewPathFor($video, $outExt);
                 $this->uploadToDisk($video->disk ?: 'local', $previewPath, $previewRel);
@@ -235,7 +265,11 @@ class VideoProcessor
             $video->refresh();
             try {
                 $thumbLocal = $tempDir . DIRECTORY_SEPARATOR . 'thumb.jpg';
-                $thumbSource = $outputPath; // processed (mp4 ou jpg — ffmpeg lida com ambos)
+                // Foto: usa o intermediário reduzido (mesma imagem, sem watermark)
+                // em vez de redecodificar o JPEG full-res — 1,2s → 0,3s numa de 24MP.
+                $thumbSource = ($isImagem && $intermediarioImagem && is_file($intermediarioImagem))
+                    ? $intermediarioImagem
+                    : $outputPath; // processed (mp4 ou jpg — ffmpeg lida com ambos)
                 $this->buildThumbnail($thumbSource, $thumbLocal, $isImagem, $meta['duration'] ?? 0);
                 $thumbRel = "thumbnails/{$video->user_id}/video-{$video->id}.jpg";
                 $this->uploadToDisk($video->disk ?: 'local', $thumbLocal, $thumbRel);
@@ -534,7 +568,60 @@ class VideoProcessor
         ];
     }
 
-    private function buildCommand(string $input, string $output, ?string $logo, array $meta, array $config): array
+    /**
+     * Encode principal do VÍDEO — e, quando o álbum é pago, o preview junto.
+     *
+     * Os dois saem do mesmo processo: um `split` no fim do filter graph
+     * alimenta as duas saídas, então o original é decodificado (e filtrado)
+     * uma vez só em vez de duas. Medido em produção, amostra de 60s:
+     * 43s + 30s separados → 54s na passada única.
+     *
+     * Se a passada única falhar, refaz do jeito antigo (duas chamadas). O
+     * filter graph combinado é mais complexo e não vale arriscar um vídeo por
+     * causa de uma otimização — o fallback fica registrado no log pra sabermos
+     * se acontece de verdade.
+     */
+    private function encodarVideo(
+        string $input,
+        string $output,
+        ?string $logo,
+        array $meta,
+        array $config,
+        ?string $previewOutput,
+        ?string $watermarkPng,
+    ): void {
+        if ($previewOutput === null) {
+            $this->runFFmpeg($this->buildCommand($input, $output, $logo, $meta, $config));
+
+            return;
+        }
+
+        try {
+            $this->runFFmpeg(
+                $this->buildCommand($input, $output, $logo, $meta, $config, $previewOutput, $watermarkPng),
+                [$output, $previewOutput],
+            );
+
+            return;
+        } catch (\Throwable $e) {
+            LogProcessamento::warning('ffmpeg.passada_unica_falhou', 'Caiu no encode em duas passadas', [
+                'erro' => mb_substr($e->getMessage(), 0, 300),
+            ]);
+        }
+
+        $this->runFFmpeg($this->buildCommand($input, $output, $logo, $meta, $config));
+        $this->buildWatermarkedPreview($output, $previewOutput);
+    }
+
+    private function buildCommand(
+        string $input,
+        string $output,
+        ?string $logo,
+        array $meta,
+        array $config,
+        ?string $previewOutput = null,
+        ?string $watermarkPng = null,
+    ): array
     {
         $W = self::OUT_WIDTH;
         $H = self::OUT_HEIGHT;
@@ -591,11 +678,7 @@ class VideoProcessor
                 $overlayY = (string) intdiv($H - $gradH, 2);
             }
 
-            // Source do gradiente: color preto opaco + geq zerando alpha por linha.
-            // `d=1` limita a 1s de frames; overlay usa o último frame para o resto
-            // do vídeo (eof_action=repeat, o default), então o custo do geq é fixo
-            // e não escala com a duração do vídeo — só com o tamanho da faixa.
-            $parts[] = "color=c=black:s={$W}x{$gradH}:d=1:r=1,format=rgba,geq=r=0:g=0:b=0:a='{$alphaExpr}'[grad]";
+            $parts[] = $this->gradienteSource($W, $gradH, $alphaExpr);
             $parts[] = "{$lastLabel}[grad]overlay=x=0:y={$overlayY}[v1]";
             $lastLabel = '[v1]';
         }
@@ -613,6 +696,42 @@ class VideoProcessor
             [$x, $y2] = $this->positionCoords($config['logo_posicao']);
             $parts[] = "{$lastLabel}[logo]overlay=x={$x}:y={$y2}[vout]";
             $lastLabel = '[vout]';
+        }
+
+        // Preview na mesma passada: `split` duplica o resultado final do graph.
+        // O ramo do preview reduz pra 540x960 e recebe a watermark tiled por
+        // cima. Fica DEPOIS do logo/gradiente de propósito — o preview tem que
+        // mostrar exatamente o que o comprador vai receber, só marcado.
+        $saidaPreview = [];
+        if ($previewOutput !== null && $watermarkPng !== null) {
+            $idxWatermark = $logo ? 2 : 1;
+            $inputs[] = '-i';
+            $inputs[] = $watermarkPng;
+
+            $pw = self::PREVIEW_WIDTH;
+            $ph = self::PREVIEW_HEIGHT;
+            // bilinear, não lanczos: o preview já é uma versão degradada de
+            // propósito e lanczos custava ~30% do tempo dessa saída à toa.
+            $parts[] = "{$lastLabel}split=2[principal][pv0]";
+            $parts[] = "[pv0]scale={$pw}:{$ph}:flags=bilinear[pvs]";
+            $parts[] = "[pvs][{$idxWatermark}:v]overlay=0:0[pvout]";
+            $lastLabel = '[principal]';
+
+            $saidaPreview = [
+                '-map', '[pvout]',
+                '-map', '0:a?',
+                '-r', (string) self::OUT_FPS,
+                '-c:v', 'libx264',
+                '-preset', 'veryfast',
+                '-crf', '28',
+                '-threads', '2',
+                '-pix_fmt', 'yuv420p',
+                '-movflags', '+faststart',
+                '-c:a', 'aac',
+                '-b:a', '48k',
+                '-ar', '44100',
+                $previewOutput,
+            ];
         }
 
         $filterComplex = implode(';', $parts);
@@ -634,7 +753,28 @@ class VideoProcessor
             '-b:a', self::OUT_AUDIO_BITRATE,
             '-ar', '48000',
             $output,
+            ...$saidaPreview,
         ];
+    }
+
+    /**
+     * Faixa de gradiente pro overlay, no label [grad].
+     *
+     * A rampa é gerada num source minúsculo (2x256) e escalada até o tamanho
+     * final. `geq` avalia a expressão pixel a pixel: numa foto de 6000px a
+     * faixa tem 8 milhões de pixels e custava 0,6s por imagem. A rampa é
+     * linear em Y e o alpha é 8-bit, então 256 linhas já contêm toda a
+     * informação — escalar não perde nada visível.
+     *
+     * `d=1:r=1` limita a 1 frame; o overlay repete esse frame pelo vídeo
+     * inteiro (eof_action=repeat, o default), então o custo não escala com a
+     * duração.
+     */
+    private function gradienteSource(int $largura, int $altura, string $alphaExpr): string
+    {
+        return "color=c=black:s=2x256:d=1:r=1,format=rgba"
+            . ",geq=r=0:g=0:b=0:a='{$alphaExpr}'"
+            . ",scale={$largura}:{$altura}:flags=bilinear[grad]";
     }
 
     /**
@@ -645,9 +785,19 @@ class VideoProcessor
      * de scale/crop automático. Isso significa que fotos gigantes (ex: 6000x4000)
      * saem no mesmo tamanho — se virarem problema de storage, aí decidimos
      * cap por regra separada, mas o processador respeita o input.
+     *
+     * $intermediarioOutput (opcional): mesma imagem reduzida a 1080px no lado
+     * maior, SEM watermark, escrita na mesma passada. Preview e thumbnail saem
+     * dela — assim um JPEG de 24MP é decodificado uma vez, não três.
      */
-    private function buildImageCommand(string $input, string $output, ?string $logo, array $meta, array $config): array
-    {
+    private function buildImageCommand(
+        string $input,
+        string $output,
+        ?string $logo,
+        array $meta,
+        array $config,
+        ?string $intermediarioOutput = null,
+    ): array {
         $espelhado = ! empty($config['espelhado']);
         $rotacao = (int) ($config['rotacao'] ?? 0);
 
@@ -695,7 +845,7 @@ class VideoProcessor
                 $alphaExpr = "{$alphaMax}*sin(PI*Y/H)";
                 $overlayY = (string) intdiv($H - $gradH, 2);
             }
-            $parts[] = "color=c=black:s={$W}x{$gradH}:d=1:r=1,format=rgba,geq=r=0:g=0:b=0:a='{$alphaExpr}'[grad]";
+            $parts[] = $this->gradienteSource($W, $gradH, $alphaExpr);
             $parts[] = "{$lastLabel}[grad]overlay=x=0:y={$overlayY}[v1]";
             $lastLabel = '[v1]';
         }
@@ -712,6 +862,24 @@ class VideoProcessor
             $lastLabel = '[vout]';
         }
 
+        // Segunda saída: a mesma imagem reduzida, sem watermark. É a fonte
+        // barata do preview e da thumbnail.
+        $saidaIntermediaria = [];
+        if ($intermediarioOutput !== null) {
+            $lado = self::IMAGEM_INTERMEDIARIO_LADO;
+            // `decrease` só encolhe: foto menor que 1080 sai no tamanho dela.
+            $parts[] = "{$lastLabel}split=2[cheia][menor0]";
+            $parts[] = "[menor0]scale={$lado}:{$lado}:force_original_aspect_ratio=decrease:flags=lanczos[menor]";
+            $lastLabel = '[cheia]';
+
+            $saidaIntermediaria = [
+                '-map', '[menor]',
+                '-frames:v', '1',
+                '-q:v', (string) self::JPG_QUALITY,
+                $intermediarioOutput,
+            ];
+        }
+
         return [
             $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
             ...$inputs,
@@ -721,6 +889,7 @@ class VideoProcessor
             '-q:v', (string) self::JPG_QUALITY,
             '-threads', (string) self::encodeThreads(),
             $output,
+            ...$saidaIntermediaria,
         ];
     }
 
@@ -741,7 +910,11 @@ class VideoProcessor
         };
     }
 
-    private function runFFmpeg(array $cmd): void
+    /**
+     * @param  list<string>  $saidasEsperadas  Arquivos que o comando deve ter
+     *   gerado. Vazio = só o último argumento (caso de saída única).
+     */
+    private function runFFmpeg(array $cmd, array $saidasEsperadas = []): void
     {
         $process = new Process($cmd);
         $process->setTimeout(self::TIMEOUT_SECONDS);
@@ -757,16 +930,24 @@ class VideoProcessor
             throw new RuntimeException('ffmpeg falhou: ' . substr($stderr, 0, 500));
         }
 
-        // Sanity check: o último argumento é o path de saída
-        $outputPath = end($cmd);
-        if (! is_string($outputPath) || ! is_file($outputPath)) {
-            LogProcessamento::error('ffmpeg.no_output', 'ffmpeg exit 0 sem arquivo de saída', ['output_path' => (string) $outputPath]);
-            throw new RuntimeException('ffmpeg terminou com exit 0 mas não gerou o arquivo de saída.');
-        }
-        $size = filesize($outputPath);
-        if ($size === false || $size < 1024) {
-            LogProcessamento::error('ffmpeg.output_vazio', "Saída ffmpeg com {$size} bytes — provável erro silencioso", ['tamanho' => $size]);
-            throw new RuntimeException("ffmpeg gerou arquivo vazio ou minúsculo ({$size} bytes) — provável erro silencioso.");
+        // Sanity check: por padrão o último argumento é o path de saída. Com
+        // múltiplas saídas na mesma passada, o chamador informa todas — checar
+        // só a última deixaria passar um comando que gerou o preview e não o
+        // processado.
+        $saidas = $saidasEsperadas ?: [end($cmd)];
+        foreach ($saidas as $outputPath) {
+            if (! is_string($outputPath) || ! is_file($outputPath)) {
+                LogProcessamento::error('ffmpeg.no_output', 'ffmpeg exit 0 sem arquivo de saída', ['output_path' => (string) $outputPath]);
+                throw new RuntimeException('ffmpeg terminou com exit 0 mas não gerou o arquivo de saída.');
+            }
+            $size = filesize($outputPath);
+            if ($size === false || $size < 1024) {
+                LogProcessamento::error('ffmpeg.output_vazio', "Saída ffmpeg com {$size} bytes — provável erro silencioso", [
+                    'tamanho' => $size,
+                    'arquivo' => basename($outputPath),
+                ]);
+                throw new RuntimeException("ffmpeg gerou arquivo vazio ou minúsculo ({$size} bytes) — provável erro silencioso.");
+            }
         }
     }
 

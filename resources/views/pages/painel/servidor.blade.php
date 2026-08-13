@@ -114,6 +114,93 @@
     </div>
 </div>
 
+{{-- Onde o tempo foi gasto: encode vs espera, com distribuição --}}
+<div class="panda-card mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+        <h6 class="fw-bold mb-0">Tempo de processamento por arquivo</h6>
+        <span class="small text-muted">{{ $tempos['amostra_total'] }} medição(ões) no período</span>
+    </div>
+    <p class="small text-muted mb-3">
+        Os cards acima mostram o tempo <em>porta a porta</em> — do envio até ficar pronto.
+        Aqui ele é separado: <strong>encode</strong> é o ffmpeg trabalhando,
+        <strong>espera</strong> é upload + tempo parado na fila.
+    </p>
+
+    @php
+        $blocos = [
+            ['rotulo' => 'Vídeos', 'icone' => 'bi-film',  'd' => $tempos['video']],
+            ['rotulo' => 'Fotos',  'icone' => 'bi-image', 'd' => $tempos['imagem']],
+        ];
+    @endphp
+
+    <div class="row g-3">
+        @foreach($blocos as $b)
+            <div class="col-md-6">
+                <div class="p-3 rounded h-100" style="background:#f7f8fa;">
+                    <div class="fw-semibold mb-2">
+                        <i class="bi {{ $b['icone'] }} me-1"></i>{{ $b['rotulo'] }}
+                        <span class="text-muted fw-normal small">— {{ $b['d']['n'] }} arquivo(s)</span>
+                    </div>
+
+                    @if($b['d']['n'] === 0)
+                        <div class="small text-muted">Nenhuma medição no período.</div>
+                    @else
+                        <div class="row g-2 text-center">
+                            @foreach([
+                                ['Mediana', $b['d']['mediana'], 'metade dos arquivos fica abaixo disso'],
+                                ['Média', $b['d']['media'], 'sobe fácil com um arquivo longo no meio'],
+                                ['p95', $b['d']['p95'], '19 de cada 20 ficam abaixo'],
+                                ['Pior', $b['d']['max'], 'o mais demorado do período'],
+                            ] as [$rot, $val, $dica])
+                                <div class="col-3">
+                                    <div class="small text-muted" title="{{ $dica }}">{{ $rot }}</div>
+                                    <div class="fw-bold">{{ $fmtTempo($val) }}</div>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        <hr class="my-2">
+                        <div class="d-flex justify-content-between small">
+                            <span class="text-muted">Espera média (upload + fila)</span>
+                            <strong>{{ $b['d']['espera_media'] === null ? '—' : $fmtTempo($b['d']['espera_media']) }}</strong>
+                        </div>
+                        @if($b['d']['seg_por_min'] !== null)
+                            <div class="d-flex justify-content-between small">
+                                <span class="text-muted" title="Único número comparável entre períodos: a média sobe sozinha se os vídeos ficarem mais longos.">
+                                    Custo por minuto de vídeo
+                                </span>
+                                <strong>{{ number_format($b['d']['seg_por_min'], 1, ',', '.') }}s / min</strong>
+                            </div>
+                        @endif
+                    @endif
+                </div>
+            </div>
+        @endforeach
+    </div>
+
+    @if(! empty($tempos['piores']))
+        <div class="mt-3">
+            <div class="small text-muted mb-1">Os mais demorados do período</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 small">
+                    <tbody>
+                    @foreach($tempos['piores'] as $p)
+                        <tr>
+                            <td class="text-muted" style="width:60px;">#{{ $p['id'] }}</td>
+                            <td class="text-truncate" style="max-width:260px;">{{ $p['nome'] ?: '—' }}</td>
+                            <td class="text-muted" style="width:110px;">
+                                {{ $p['duracao'] > 0 ? $fmtTempo($p['duracao']) . ' de vídeo' : 'foto' }}
+                            </td>
+                            <td class="text-end fw-semibold" style="width:90px;">{{ $fmtTempo($p['seg']) }}</td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
+</div>
+
 {{-- Detalhamento da fila (snapshot atual, não afeta pelo range) --}}
 <div class="panda-card mb-4">
     <div class="d-flex justify-content-between align-items-center mb-2">
@@ -289,10 +376,12 @@
 
             <hr class="my-2">
             <div class="text-muted" style="font-size:.75rem; line-height:1.5;">
-                Reduzir pixels economiza <strong>banda e disco</strong>, não CPU: a saída é sempre 1080x1920,
-                e entrada em 4K custa só ~5% a mais que Full HD no encode. Normalizar no servidor
-                (quando o navegador não consegue) cobra <strong>um encode a mais</strong> — por isso esse
-                grupo aparece separado, e não somado como economia.
+                Em <strong>vídeo</strong>, reduzir pixels economiza banda e disco, não CPU: a saída é
+                sempre 1080x1920, e entrada em 4K custa só ~5% a mais que Full HD no encode. Normalizar
+                no servidor (quando o navegador não consegue) cobra <strong>um encode a mais</strong> —
+                por isso esse grupo aparece separado, e não somado como economia.
+                Em <strong>foto</strong> é diferente: a saída mantém o tamanho do original, então um
+                arquivo menor entrando significa menos trabalho em cada etapa.
             </div>
         </div>
     </div>

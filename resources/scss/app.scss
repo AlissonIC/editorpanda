@@ -2189,3 +2189,72 @@ body {
         .mf-tira-label { color: #111; font-weight: 600; }
     }
 }
+
+/* ============================================================
+   Checkout do plano (/painel/assinatura)
+   ============================================================ */
+.ck-modal {
+    border: 0;
+    border-radius: 1rem;
+
+    #ck-tipo-badge { font-size: .7rem; letter-spacing: .02em; }
+}
+
+.ck-resumo {
+    background: #f7f8fa;
+    border-radius: .75rem;
+    padding: 1.25rem;
+    height: 100%;
+}
+
+.ck-vigencia {
+    background: #fff;
+    border: 1px solid #e7e9ee;
+    border-radius: .5rem;
+    padding: .6rem .75rem;
+}
+
+.ck-total {
+    border-bottom: 1px dashed #dfe3ea;
+    padding-bottom: .75rem;
+}
+
+/* Seletor PIX/cartão — dois cartões grandes, alvo fácil no celular */
+.ck-metodos {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .75rem;
+}
+
+.ck-metodo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .15rem;
+    padding: .85rem .5rem;
+    background: #fff;
+    border: 2px solid #e7e9ee;
+    border-radius: .75rem;
+    transition: border-color .15s, background .15s;
+
+    i { font-size: 1.35rem; }
+    span { font-weight: 600; font-size: .9rem; }
+    small { color: #8a8f98; font-size: .72rem; }
+
+    &:hover { border-color: #c7ccd6; }
+
+    &.is-active {
+        border-color: #111;
+        background: #fafafa;
+    }
+}
+
+.ck-qr {
+    width: 200px;
+    height: 200px;
+    /* O MP devolve o QR com margem branca própria — o fundo evita que ele
+       desapareça se o painel entrar em tema escuro. */
+    background: #fff;
+    border-radius: .5rem;
+    padding: .25rem;
+}

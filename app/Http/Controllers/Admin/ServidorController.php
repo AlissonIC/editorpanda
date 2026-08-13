@@ -129,6 +129,7 @@ class ServidorController extends Controller
         $totalAssinaturasRange = collect($serieAssinaturas)->sum('valor');
 
         $otimizacao = $this->metricasOtimizacao();
+        $tempos = $this->relatorioTempos($de, $ate);
 
         // Capacidade de encode — o admin precisa disso pra decidir quantos
         // workers subir. `workers` é declarado no .env (são processos externos).
@@ -186,7 +187,118 @@ class ServidorController extends Controller
             // Otimização de vídeos
             'otimizacao' => $otimizacao,
             'capacidade' => $capacidade,
+            'tempos' => $tempos,
         ]);
+    }
+
+    /**
+     * Relatório de tempo de processamento por arquivo.
+     *
+     * Os cards do topo mostram o tempo de PORTA A PORTA (o usuário aperta
+     * enviar → arquivo pronto), que é o que ele sente. Aqui separamos onde
+     * esse tempo foi gasto:
+     *
+     *   - `encode`: só o pipeline ffmpeg, medido em processamento_ms
+     *   - `espera`: upload + tempo parado na fila = total − encode
+     *
+     * A separação importa porque as duas metades se resolvem de formas
+     * diferentes: encode alto pede preset/filtro/CPU, espera alta pede mais
+     * workers ou upload mais leve.
+     *
+     * Média sozinha engana quando um vídeo de 10 min entra no meio de vários
+     * de 15s — por isso mediana, p95 e o pior caso. E `s_por_min` normaliza
+     * pela duração: é o único número comparável entre períodos, já que a
+     * média sobe só porque os vídeos ficaram mais longos.
+     */
+    private function relatorioTempos(Carbon $de, Carbon $ate): array
+    {
+        // Amostra bruta em PHP: MySQL 5.7 não tem percentil e o volume aqui é
+        // pequeno. O teto de 3000 evita que um período gigante puxe o mundo.
+        $linhas = DB::table('videos as v')
+            ->join('albuns as a', 'a.id', '=', 'v.album_id')
+            ->where('v.status', 'concluido')
+            ->where('a.edicao_manual', false)
+            ->whereNotNull('v.processamento_ms')
+            ->whereBetween('v.processado_em', [$de, $ate])
+            ->orderByDesc('v.processado_em')
+            ->limit(3000)
+            ->get([
+                'v.id', 'v.nome', 'v.processamento_ms', 'v.duracao_segundos',
+                'v.upload_iniciado_em', 'v.processado_em', 'a.tipo',
+            ]);
+
+        $porTipo = [];
+        foreach (['video', 'imagem'] as $tipo) {
+            $grupo = $linhas->where('tipo', $tipo);
+            $porTipo[$tipo] = $this->resumirTempos($grupo);
+        }
+
+        // Os 5 que mais demoraram — é neles que se descobre o padrão que trava
+        // a fila (vídeo longo demais, arquivo pesado, formato exótico).
+        $piores = $linhas->sortByDesc('processamento_ms')->take(5)->map(fn ($l) => [
+            'id' => $l->id,
+            'nome' => $l->nome,
+            'tipo' => $l->tipo,
+            'seg' => round($l->processamento_ms / 1000),
+            'duracao' => (int) $l->duracao_segundos,
+        ])->values()->all();
+
+        return [
+            'video' => $porTipo['video'],
+            'imagem' => $porTipo['imagem'],
+            'piores' => $piores,
+            'amostra_total' => $linhas->count(),
+        ];
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, object>  $linhas
+     */
+    private function resumirTempos($linhas): array
+    {
+        $n = $linhas->count();
+        if ($n === 0) {
+            return ['n' => 0];
+        }
+
+        $segundos = $linhas->map(fn ($l) => $l->processamento_ms / 1000)->sort()->values();
+
+        // Espera = porta a porta − encode. Só entra quem tem upload_iniciado_em
+        // (uploads antigos não gravavam), senão a média vira lixo.
+        $esperas = $linhas
+            ->filter(fn ($l) => $l->upload_iniciado_em !== null)
+            ->map(function ($l) {
+                $total = Carbon::parse($l->processado_em)->getTimestamp()
+                    - Carbon::parse($l->upload_iniciado_em)->getTimestamp();
+
+                return max(0, $total - ($l->processamento_ms / 1000));
+            });
+
+        // Só faz sentido pra vídeo: dividir por duração de uma foto (0s) estoura.
+        $comDuracao = $linhas->filter(fn ($l) => (int) $l->duracao_segundos > 0);
+        $segPorMin = $comDuracao->isEmpty()
+            ? null
+            : round(
+                $comDuracao->sum(fn ($l) => $l->processamento_ms / 1000)
+                / ($comDuracao->sum(fn ($l) => (int) $l->duracao_segundos) / 60),
+                1
+            );
+
+        $percentil = function (float $p) use ($segundos, $n) {
+            $idx = (int) min($n - 1, max(0, ceil($p * $n) - 1));
+
+            return round($segundos[$idx]);
+        };
+
+        return [
+            'n' => $n,
+            'media' => round($segundos->avg()),
+            'mediana' => $percentil(0.50),
+            'p95' => $percentil(0.95),
+            'max' => round($segundos->last()),
+            'espera_media' => $esperas->isEmpty() ? null : round($esperas->avg()),
+            'seg_por_min' => $segPorMin,
+        ];
     }
 
     /**
@@ -197,10 +309,16 @@ class ServidorController extends Controller
      *   - o custo/ganho de processamento sai da MÉDIA REAL de processamento_ms
      *     de cada grupo (navegador / servidor / sem otimização)
      *
-     * Reduzir pixels quase não acelera o encode (a saída é fixa em 1080x1920;
-     * medimos 4K custando ~5% a mais que Full HD que entra). O ganho de verdade
-     * é banda e disco — e normalizar no servidor CUSTA um encode extra. Por isso
-     * os dois grupos aparecem separados em vez de virar um número só.
+     * Vale só pra VÍDEO — é o único tipo que passa por normalização de
+     * resolução. Reduzir pixels quase não acelera o encode dele (a saída é fixa
+     * em 1080x1920; medimos 4K custando ~5% a mais que Full HD que entra). O
+     * ganho de verdade é banda e disco — e normalizar no servidor CUSTA um
+     * encode extra. Por isso os dois grupos aparecem separados em vez de virar
+     * um número só.
+     *
+     * Foto é outra história: a saída preserva o tamanho do original (ver
+     * buildImageCommand), então entrada menor reduz decode, filtro e encode
+     * juntos. Hoje não reduzimos foto nenhuma — o arquivo entregue É o produto.
      */
     private function metricasOtimizacao(): array
     {

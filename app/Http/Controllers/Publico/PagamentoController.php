@@ -250,11 +250,18 @@ class PagamentoController extends Controller
         }
 
         $raw = $consulta['raw'];
-        $externalRef = $raw['external_reference'] ?? null;
+        $externalRef = (string) ($raw['external_reference'] ?? '');
+
+        // Assinatura vem prefixada ("assinatura-9"); pedido é o id puro ("9").
+        // O prefixo existe porque os dois compartilham a mesma conta do MP e a
+        // mesma notification_url.
+        if (str_starts_with($externalRef, 'assinatura-')) {
+            return $this->notificarAssinatura($externalRef, (string) $paymentId, $consulta);
+        }
 
         // external_reference = pedido->id (setado na criação). Sem ele, não
         // conseguimos amarrar — provavelmente é payment de outra conta.
-        $pedido = $externalRef ? Pedido::find((int) $externalRef) : null;
+        $pedido = $externalRef !== '' ? Pedido::find((int) $externalRef) : null;
         if (! $pedido) {
             LogPagamento::warning(null, 'notificacao.pedido_nao_encontrado', "external_ref={$externalRef}", [
                 'payment_id' => $paymentId,
@@ -287,6 +294,57 @@ class PagamentoController extends Controller
                   && $pedido->status !== Pedido::STATUS_CANCELADO) {
             $pedido->update(['status' => Pedido::STATUS_CANCELADO]);
             LogPagamento::warning($pedido, 'notificacao.pedido_cancelado', "MP: {$consulta['status']}");
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Mesmo handler, outra mercadoria: aqui o pagamento é do plano do dono do
+     * evento, não da compra de um vídeo.
+     *
+     * A ativação é idempotente (lock + checagem de status), então não importa
+     * se o polling do painel chegou antes desta notificação.
+     */
+    private function notificarAssinatura(string $externalRef, string $paymentId, array $consulta): JsonResponse
+    {
+        $assinatura = \App\Models\Assinatura::find((int) substr($externalRef, strlen('assinatura-')));
+
+        if (! $assinatura) {
+            LogPagamento::warning(null, 'notificacao.assinatura_nao_encontrada', "external_ref={$externalRef}", [
+                'payment_id' => $paymentId,
+            ]);
+
+            return response()->json(['ok' => true]);
+        }
+
+        // Payment estranho tentando se amarrar a uma cobrança nossa.
+        if ($assinatura->gateway_id && $assinatura->gateway_id !== $paymentId) {
+            LogPagamento::warning($assinatura, 'notificacao.gateway_id_divergente',
+                "esperado={$assinatura->gateway_id} recebido={$paymentId}");
+
+            return response()->json(['ok' => true]);
+        }
+
+        if ($consulta['status'] !== $assinatura->gateway_status) {
+            LogPagamento::info($assinatura, 'notificacao.status_mudou',
+                "{$assinatura->gateway_status} → {$consulta['status']}", null, $consulta['raw']);
+            $assinatura->update([
+                'gateway_status' => $consulta['status'],
+                'gateway_metadata' => $consulta['raw'],
+            ]);
+        }
+
+        if ($consulta['status'] === 'approved') {
+            app(\App\Http\Controllers\Painel\AssinaturaCheckoutController::class)
+                ->ativar($assinatura, $consulta['raw']);
+        } elseif (in_array($consulta['status'], ['cancelled', 'rejected'], true)
+                  && $assinatura->status === \App\Models\Assinatura::STATUS_PENDENTE) {
+            $assinatura->update([
+                'status' => \App\Models\Assinatura::STATUS_CANCELADA,
+                'cancelado_em' => now(),
+            ]);
+            LogPagamento::warning($assinatura, 'notificacao.assinatura_cancelada', "MP: {$consulta['status']}");
         }
 
         return response()->json(['ok' => true]);

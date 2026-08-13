@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Contracts\CobravelMp;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -10,7 +11,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * Uso:
  *   LogPagamento::info($pedido, 'pix.criado', 'PIX gerado', [...], $mpResponse);
- *   LogPagamento::error($pedido, 'cartao.rejeitado', 'MP recusou', [...], $mpResponse);
+ *   LogPagamento::error($assinatura, 'cartao.rejeitado', 'MP recusou', [...], $mpResponse);
+ *
+ * A origem é qualquer CobravelMp (Pedido ou Assinatura) — cada uma cai na sua
+ * coluna. Passar null é válido: notificação do MP que chega sem dono ainda
+ * precisa ser registrada.
  *
  * Nunca deve derrubar a request principal — sempre encapsula em try/catch.
  */
@@ -21,6 +26,7 @@ class LogPagamento extends Model
 
     protected $fillable = [
         'pedido_id',
+        'assinatura_id',
         'nivel',
         'evento',
         'mensagem',
@@ -44,32 +50,38 @@ class LogPagamento extends Model
         return $this->belongsTo(Pedido::class);
     }
 
-    public static function info(?Pedido $pedido, string $evento, string $mensagem, ?array $payload = null, ?array $response = null): void
+    public function assinatura(): BelongsTo
     {
-        self::registrar('info', $pedido, $evento, $mensagem, $payload, $response);
+        return $this->belongsTo(Assinatura::class);
     }
 
-    public static function warning(?Pedido $pedido, string $evento, string $mensagem, ?array $payload = null, ?array $response = null): void
+    public static function info(?CobravelMp $origem, string $evento, string $mensagem, ?array $payload = null, ?array $response = null): void
     {
-        self::registrar('warning', $pedido, $evento, $mensagem, $payload, $response);
+        self::registrar('info', $origem, $evento, $mensagem, $payload, $response);
     }
 
-    public static function error(?Pedido $pedido, string $evento, string $mensagem, ?array $payload = null, ?array $response = null): void
+    public static function warning(?CobravelMp $origem, string $evento, string $mensagem, ?array $payload = null, ?array $response = null): void
     {
-        self::registrar('error', $pedido, $evento, $mensagem, $payload, $response);
+        self::registrar('warning', $origem, $evento, $mensagem, $payload, $response);
     }
 
-    public static function critical(?Pedido $pedido, string $evento, string $mensagem, ?array $payload = null, ?array $response = null): void
+    public static function error(?CobravelMp $origem, string $evento, string $mensagem, ?array $payload = null, ?array $response = null): void
     {
-        self::registrar('critical', $pedido, $evento, $mensagem, $payload, $response);
+        self::registrar('error', $origem, $evento, $mensagem, $payload, $response);
     }
 
-    private static function registrar(string $nivel, ?Pedido $pedido, string $evento, string $mensagem, ?array $payload, ?array $response): void
+    public static function critical(?CobravelMp $origem, string $evento, string $mensagem, ?array $payload = null, ?array $response = null): void
+    {
+        self::registrar('critical', $origem, $evento, $mensagem, $payload, $response);
+    }
+
+    private static function registrar(string $nivel, ?CobravelMp $origem, string $evento, string $mensagem, ?array $payload, ?array $response): void
     {
         try {
             $gatewayStatus = is_array($response) ? ($response['status'] ?? null) : null;
             self::create([
-                'pedido_id' => $pedido?->id,
+                'pedido_id' => $origem instanceof Pedido ? $origem->id : null,
+                'assinatura_id' => $origem instanceof Assinatura ? $origem->id : null,
                 'nivel' => $nivel,
                 'evento' => mb_substr($evento, 0, 60),
                 'mensagem' => mb_substr($mensagem, 0, 500),
@@ -83,7 +95,7 @@ class LogPagamento extends Model
                 'erro' => $e->getMessage(),
                 'nivel' => $nivel,
                 'evento' => $evento,
-                'pedido_id' => $pedido?->id,
+                'origem' => $origem?->mpReferenciaExterna(),
             ]);
         }
     }
