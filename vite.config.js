@@ -22,6 +22,7 @@ export default defineConfig({
                 'resources/js/pages/painel/albuns-upload.js',
                 'resources/js/pages/painel/configuracoes.js',
                 'resources/js/pages/painel/pedidos.js',
+                'resources/js/pages/painel/pedido-detalhe.js',
                 'resources/js/pages/painel/saques.js',
                 'resources/js/pages/painel/planos.js',
                 'resources/js/pages/painel/relatorio.js',

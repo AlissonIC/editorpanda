@@ -119,24 +119,15 @@ class Assinatura extends Model implements CobravelMp
 
         // MP exige identificação do pagador no PIX. Sem CPF ele recusa a criação
         // do payment, então o checkout coleta antes de chegar aqui.
+        //
+        // Endereço não é enviado: o MP não exige (o exemplo oficial do SDK
+        // manda só `payer.email`) e não vale pedir seis campos por um sinal
+        // antifraude opcional.
         if ($user?->cpf) {
             $pagador['identification'] = [
                 'type' => 'CPF',
                 'number' => preg_replace('/\D/', '', $user->cpf),
             ];
-        }
-
-        // Endereço é opcional pro MP, mas entra na análise antifraude do cartão
-        // — mandar quando temos melhora a taxa de aprovação.
-        if ($user?->cep && $user?->logradouro) {
-            $pagador['address'] = array_filter([
-                'zip_code' => preg_replace('/\D/', '', $user->cep),
-                'street_name' => $user->logradouro,
-                'street_number' => (string) $user->numero,
-                'neighborhood' => $user->bairro,
-                'city' => $user->cidade,
-                'federal_unit' => $user->estado,
-            ], fn ($v) => $v !== null && $v !== '');
         }
 
         return $pagador;

@@ -109,10 +109,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         $('ck-total').textContent = brl(d.total);
 
-        // Pré-preenche com o cadastro — quanto menos campo, melhor a conversão.
+        // Pré-preenche com o cadastro — na segunda cobrança é só confirmar.
         const c = d.cobranca || {};
-        ['cpf', 'telefone', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado']
-            .forEach((campo) => { $(`ck-${campo}`).value = c[campo] || ''; });
+        $('ck-cpf').value = c.cpf || '';
+        $('ck-cobranca-em').textContent = `Recibo em nome de ${c.nome}, enviado para ${c.email}.`;
 
         // Volta pra etapa 1 (o modal é reaproveitado entre planos)
         mostrar($('ck-etapa-dados'), true);
@@ -120,13 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
         mostrar($('ck-etapa-ok'), false);
         $('ck-cpf').classList.remove('is-invalid');
     }
-
-    // ---- Endereço opcional ----------------------------------------------
-    $('ck-toggle-endereco').addEventListener('click', () => {
-        const aberto = !$('ck-endereco').classList.contains('d-none');
-        mostrar($('ck-endereco'), aberto);
-        $('ck-chevron').className = `bi bi-chevron-${aberto ? 'right' : 'down'} me-1`;
-    });
 
     // Máscara leve de CPF — só formata, quem valida é o servidor
     $('ck-cpf').addEventListener('input', (e) => {
@@ -143,12 +136,10 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true;
         $('ck-cpf').classList.remove('is-invalid');
 
-        const payload = {};
-        ['cpf', 'telefone', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado']
-            .forEach((campo) => { payload[campo] = $(`ck-${campo}`).value.trim() || null; });
-
         try {
-            const { data } = await axios.post(`/painel/assinatura/checkout/${ctx.planoId}`, payload);
+            const { data } = await axios.post(`/painel/assinatura/checkout/${ctx.planoId}`, {
+                cpf: $('ck-cpf').value.trim(),
+            });
             ctx.assinaturaId = data.assinatura_id;
             ctx.publicKey = data.public_key;
             ctx.payerEmail = data.payer_email;
@@ -298,20 +289,4 @@ document.addEventListener('DOMContentLoaded', () => {
         unmountCardBricks();
     });
 
-    // ---- Cancelamento (fora do checkout) --------------------------------
-    document.getElementById('acoes-assinatura')?.addEventListener('click', async (e) => {
-        const btn = e.target.closest('[data-action="cancelar"]');
-        if (!btn) return;
-        if (!confirm('Cancelar sua assinatura? Você mantém acesso até a data de vencimento.')) return;
-
-        btn.disabled = true;
-        try {
-            const { data } = await axios.post('/painel/assinatura/cancelar');
-            window.showToast(data.message || 'Assinatura cancelada.', 'success');
-            setTimeout(() => window.location.reload(), 800);
-        } catch (err) {
-            window.showToast(err.response?.data?.message || 'Erro na operação.', 'error');
-            btn.disabled = false;
-        }
-    });
 });

@@ -72,7 +72,10 @@
                     </div>
                 @endif
 
-                <div class="d-flex gap-2 flex-wrap" id="acoes-assinatura">
+                {{-- Sem botão de cancelar: o plano é pago por período fechado e
+                     não renova sozinho. Quem não quer continuar simplesmente não
+                     renova — não há assinatura recorrente pra interromper. --}}
+                <div class="d-flex gap-2 flex-wrap">
                     @if($assinaturaAtual->plano_id)
                         {{-- Renovar é o mesmo checkout de assinar: o backend
                              reconhece que é o plano vigente e trata como renovação. --}}
@@ -82,9 +85,6 @@
                             Renovar por 30 dias (R$ {{ number_format((float) $assinaturaAtual->preco_pago, 2, ',', '.') }})
                         </button>
                     @endif
-                    <button type="button" class="btn btn-outline-danger" data-action="cancelar">
-                        <i class="bi bi-x-circle me-1"></i> Cancelar
-                    </button>
                 </div>
             @else
                 <div class="text-center py-4">
@@ -163,10 +163,11 @@
         <div class="panda-card small">
             <h6 class="fw-bold mb-2">Como funciona</h6>
             <ul class="text-muted ps-3 mb-0">
-                <li>Cada assinatura dura 30 dias.</li>
+                <li>Cada assinatura dura 30 dias e não renova sozinha — nada é
+                    cobrado sem você mandar.</li>
                 <li>Renove antes do vencimento para não perder acesso.</li>
                 <li>Trocar de plano cancela o atual e inicia o novo do zero.</li>
-                <li>Cancelar mantém acesso até a data de vencimento.</li>
+                <li>Se não renovar, o acesso segue normal até a data de vencimento.</li>
             </ul>
         </div>
     </div>
@@ -273,61 +274,17 @@
                                 <span class="h4 fw-bold mb-0" id="ck-total"></span>
                             </div>
 
-                            {{-- Etapa 1: dados de cobrança --}}
+                            {{-- Etapa 1: dados de cobrança.
+                                 Um campo só. Nome e e-mail vêm do cadastro e o
+                                 Mercado Pago não exige mais nada — endereço é
+                                 opcional pra ele, e campo a mais aqui é só
+                                 atrito. --}}
                             <div id="ck-etapa-dados">
-                                <div class="row g-2">
-                                    <div class="col-sm-6">
-                                        <label class="form-label small mb-1">CPF <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" id="ck-cpf" inputmode="numeric"
-                                               autocomplete="off" maxlength="14" placeholder="000.000.000-00">
-                                        <div class="invalid-feedback" id="ck-cpf-erro"></div>
-                                    </div>
-                                    <div class="col-sm-6">
-                                        <label class="form-label small mb-1">Telefone</label>
-                                        <input type="text" class="form-control" id="ck-telefone" inputmode="tel"
-                                               autocomplete="tel" maxlength="20" placeholder="(00) 00000-0000">
-                                    </div>
-                                </div>
-
-                                <button type="button" class="btn btn-link btn-sm px-0 mt-2" id="ck-toggle-endereco">
-                                    <i class="bi bi-chevron-right me-1" id="ck-chevron"></i>
-                                    Endereço de cobrança <span class="text-muted">(opcional)</span>
-                                </button>
-                                <div class="d-none" id="ck-endereco">
-                                    <p class="small text-muted mb-2">
-                                        Não é obrigatório, mas ajuda o banco a aprovar o cartão.
-                                    </p>
-                                    <div class="row g-2">
-                                        <div class="col-4">
-                                            <label class="form-label small mb-1">CEP</label>
-                                            <input type="text" class="form-control form-control-sm" id="ck-cep" maxlength="9" inputmode="numeric">
-                                        </div>
-                                        <div class="col-8">
-                                            <label class="form-label small mb-1">Logradouro</label>
-                                            <input type="text" class="form-control form-control-sm" id="ck-logradouro" maxlength="150">
-                                        </div>
-                                        <div class="col-4">
-                                            <label class="form-label small mb-1">Número</label>
-                                            <input type="text" class="form-control form-control-sm" id="ck-numero" maxlength="20">
-                                        </div>
-                                        <div class="col-8">
-                                            <label class="form-label small mb-1">Complemento</label>
-                                            <input type="text" class="form-control form-control-sm" id="ck-complemento" maxlength="100">
-                                        </div>
-                                        <div class="col-6">
-                                            <label class="form-label small mb-1">Bairro</label>
-                                            <input type="text" class="form-control form-control-sm" id="ck-bairro" maxlength="100">
-                                        </div>
-                                        <div class="col-4">
-                                            <label class="form-label small mb-1">Cidade</label>
-                                            <input type="text" class="form-control form-control-sm" id="ck-cidade" maxlength="100">
-                                        </div>
-                                        <div class="col-2">
-                                            <label class="form-label small mb-1">UF</label>
-                                            <input type="text" class="form-control form-control-sm" id="ck-estado" maxlength="2">
-                                        </div>
-                                    </div>
-                                </div>
+                                <label class="form-label small mb-1">CPF do pagador <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="ck-cpf" inputmode="numeric"
+                                       autocomplete="off" maxlength="14" placeholder="000.000.000-00">
+                                <div class="invalid-feedback" id="ck-cpf-erro"></div>
+                                <div class="form-text small" id="ck-cobranca-em"></div>
 
                                 <button type="button" class="btn btn-dark-panda w-100 mt-3" id="ck-continuar">
                                     Continuar para o pagamento

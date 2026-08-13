@@ -5,13 +5,10 @@ namespace App\Http\Controllers\Publico;
 use App\Http\Controllers\Controller;
 use App\Models\LogPagamento;
 use App\Models\Pedido;
-use App\Models\User;
-use App\Notifications\CompraFinalizadaNotification;
 use App\Services\MercadoPagoService;
-use App\Services\PedidoMergeService;
+use App\Services\PedidoPagamentoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 
 /**
@@ -378,61 +375,12 @@ class PagamentoController extends Controller
 
     /**
      * Passa o pedido pra 'pago', credita vendedor e dispara notificação.
-     * Idempotente (checa se já foi pago pra não creditar 2x).
+     * A regra vive no PedidoPagamentoService — a tela de pedidos usa a mesma
+     * quando o admin libera na mão.
      */
     private function marcarComoPago(Pedido $pedido, array $rawMpResponse): void
     {
-        DB::transaction(function () use ($pedido, $rawMpResponse) {
-            $lock = Pedido::whereKey($pedido->id)->lockForUpdate()->first();
-            if ($lock->status === Pedido::STATUS_PAGO) return; // já processado
-
-            $lock->update([
-                'status' => Pedido::STATUS_PAGO,
-                'pago_em' => now(),
-                'gateway_status' => 'approved',
-                'gateway_metadata' => $rawMpResponse,
-            ]);
-
-            // Credita saldo do vendedor descontando taxa do plano.
-            $vendedor = User::whereKey($lock->user_id)->lockForUpdate()->with('plano')->first();
-            $taxa = (float) ($vendedor?->plano?->taxa_por_venda ?? 0);
-            $credito = round((float) $lock->total * (1 - $taxa / 100), 2);
-            $creditoCents = (int) round($credito * 100);
-            if ($vendedor && $creditoCents > 0) {
-                DB::table('users')->where('id', $vendedor->id)->update([
-                    'saldo_disponivel' => DB::raw("saldo_disponivel + ({$creditoCents} / 100)"),
-                ]);
-            }
-
-            LogPagamento::info($lock, 'pedido.pago', "Total R$ {$lock->total} liberado");
-        });
-
-        // Fora da transaction — falhar aqui não pode reverter o pagamento.
-        $pedido->refresh();
-
-        // Mescla opcional pedida no checkout. Idempotente: polling e notificação
-        // do MP podem cair aqui quase juntos.
-        try {
-            app(PedidoMergeService::class)->criarSeSolicitado($pedido);
-        } catch (\Throwable $e) {
-            \Log::warning('Falha ao enfileirar mescla do pedido', [
-                'pedido' => $pedido->id, 'erro' => $e->getMessage(),
-            ]);
-        }
-
-        try {
-            [$tokenPlano] = \App\Models\AcessoToken::gerarPara(
-                $pedido->comprador_email,
-                request()->ip(),
-                request()->userAgent(),
-            );
-            $urlAcesso = route('publico.acesso.validar', ['token' => $tokenPlano]);
-            $pedido->comprador?->notify(new CompraFinalizadaNotification($pedido, $urlAcesso));
-        } catch (\Throwable $e) {
-            \Log::warning('Falha ao enviar email pós-pagamento', [
-                'pedido' => $pedido->id, 'erro' => $e->getMessage(),
-            ]);
-        }
+        app(PedidoPagamentoService::class)->marcarComoPago($pedido, $rawMpResponse);
     }
 
     /**

@@ -106,19 +106,11 @@ class AssinaturaCheckoutController extends Controller
             ],
             'total' => (float) $plano->preco,
             'avisos' => $avisos,
-            // Pré-preenche o formulário e diz o que ainda falta.
+            // Pré-preenche o formulário — na segunda cobrança o CPF já vem.
             'cobranca' => [
                 'nome' => $user->name,
                 'email' => $user->email,
                 'cpf' => $user->cpf,
-                'telefone' => $user->telefone,
-                'cep' => $user->cep,
-                'logradouro' => $user->logradouro,
-                'numero' => $user->numero,
-                'complemento' => $user->complemento,
-                'bairro' => $user->bairro,
-                'cidade' => $user->cidade,
-                'estado' => $user->estado,
             ],
         ]);
     }
@@ -136,16 +128,10 @@ class AssinaturaCheckoutController extends Controller
         abort_if($user->isAdmin(), 403);
         abort_unless($plano->ativo, 422, 'Este plano não está disponível.');
 
+        // Só o CPF: é o único dado de pagador que o MP exige além do e-mail,
+        // que já vem do cadastro.
         $dados = $request->validate([
             'cpf' => ['required', 'string', 'max:14'],
-            'telefone' => ['nullable', 'string', 'max:20'],
-            'cep' => ['nullable', 'string', 'max:9'],
-            'logradouro' => ['nullable', 'string', 'max:150'],
-            'numero' => ['nullable', 'string', 'max:20'],
-            'complemento' => ['nullable', 'string', 'max:100'],
-            'bairro' => ['nullable', 'string', 'max:100'],
-            'cidade' => ['nullable', 'string', 'max:100'],
-            'estado' => ['nullable', 'string', 'max:100'],
         ]);
 
         if (! $this->cpfValido($dados['cpf'])) {

@@ -46,11 +46,14 @@ return new class extends Migration
         ]);
 
         Schema::table('users', function (Blueprint $table) {
-            // MP exige identificação do pagador no PIX (e melhora aprovação no
-            // cartão). Guardamos no user pra não pedir a cada compra.
+            // Único dado de pagador que o MP exige além do e-mail: o CPF é
+            // obrigatório no PIX e é o que o Bricks pede no cartão. Guardamos
+            // no cadastro pra não perguntar de novo a cada cobrança.
+            //
+            // Endereço NÃO entra aqui de propósito — o MP aceita pagamento sem
+            // ele (o exemplo oficial do SDK manda só `payer.email`), e campo a
+            // mais no checkout é conversão a menos.
             $table->string('cpf', 14)->nullable()->after('email');
-            $table->string('telefone', 20)->nullable()->after('cpf');
-            $table->string('complemento', 100)->nullable()->after('numero');
         });
 
         // O log de pagamento passa a cobrir assinatura também.
@@ -72,7 +75,7 @@ return new class extends Migration
         DB::statement("ALTER TABLE assinaturas MODIFY status ENUM('ativa','expirada','cancelada') NOT NULL DEFAULT 'ativa'");
 
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['cpf', 'telefone', 'complemento']);
+            $table->dropColumn('cpf');
         });
 
         Schema::table('logs_pagamento', function (Blueprint $table) {

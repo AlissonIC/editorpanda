@@ -14,14 +14,15 @@
         <table id="tbl-pedidos" class="table table-hover align-middle w-100">
             <thead>
                 <tr>
-                    <th>#</th>
                     <th>Álbum</th>
                     @if($isAdmin)<th>Cliente dono</th>@endif
                     <th>Comprador</th>
                     <th>E-mail</th>
                     <th>Total</th>
+                    <th>Pagamento</th>
                     <th>Status</th>
                     <th>Data</th>
+                    <th class="text-end">Ações</th>
                 </tr>
             </thead>
         </table>

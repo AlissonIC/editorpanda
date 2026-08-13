@@ -205,7 +205,14 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
     Route::get('albuns/{album}/videos', [Painel\VideosUploadController::class, 'listByAlbum'])->name('albuns.videos.list');
 
     Route::get('pedidos', [Painel\PedidosController::class, 'index'])->name('pedidos.index');
+    // `data` antes do wildcard, senão vira id de pedido.
     Route::get('pedidos/data', [Painel\PedidosController::class, 'data'])->name('pedidos.data');
+    Route::get('pedidos/{pedido}', [Painel\PedidosController::class, 'show'])->name('pedidos.show');
+    // Troca manual de status — só admin (checado no controller: libera arquivo
+    // e credita saldo do vendedor).
+    Route::put('pedidos/{pedido}/status', [Painel\PedidosController::class, 'atualizarStatus'])
+        ->middleware('throttle:30,1')
+        ->name('pedidos.status');
 
     // Relatório — só cliente (admin tem o dashboard)
     Route::middleware('role:cliente')->group(function () {
@@ -230,8 +237,9 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
             ->middleware('throttle:10,1')
             ->name('saques.store');
 
+        // Sem rota de cancelamento: o plano é comprado por 30 dias fechados e
+        // não é recorrente. Cancelar só devolveria dias já pagos.
         Route::get('assinatura', [Painel\AssinaturaController::class, 'index'])->name('assinatura.index');
-        Route::post('assinatura/cancelar', [Painel\AssinaturaController::class, 'cancelar'])->name('assinatura.cancelar');
 
         // Checkout do plano (PIX/cartão via Mercado Pago). Substituiu os antigos
         // POST assinar/renovar, que ativavam o plano sem cobrar nada.

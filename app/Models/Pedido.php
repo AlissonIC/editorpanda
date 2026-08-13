@@ -81,6 +81,12 @@ class Pedido extends Model implements CobravelMp
         return $this->belongsTo(Comprador::class);
     }
 
+    /** Cupom aplicado no checkout, quando houve. Usado na ficha do pedido. */
+    public function cupom(): BelongsTo
+    {
+        return $this->belongsTo(Cupom::class);
+    }
+
     // ---------------------------------------------------------------
     // CobravelMp — o que o Mercado Pago precisa saber deste pedido
     // ---------------------------------------------------------------
