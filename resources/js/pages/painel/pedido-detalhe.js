@@ -8,16 +8,85 @@ import axios from 'axios';
  * explícita antes de disparar.
  */
 document.addEventListener('DOMContentLoaded', () => {
+    montarVisor();
+    montarTrocaDeStatus();
+});
+
+/**
+ * Galeria dos itens: clicar na miniatura abre o arquivo grande, com botão de
+ * tela cheia. O <video>/<img> é criado na hora e destruído ao fechar — deixar
+ * um vídeo montado no DOM continua baixando bytes depois que o modal some.
+ */
+function montarVisor() {
+    const modalEl = document.getElementById('modal-item');
+    if (!modalEl) return;
+
+    const modal = new window.bootstrap.Modal(modalEl);
+    const palco = document.getElementById('pd-visor-palco');
+    const nomeEl = document.getElementById('pd-visor-nome');
+
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.js-abrir-item');
+        if (!btn) return;
+
+        const { nome, arquivo, foto } = btn.dataset;
+        nomeEl.textContent = nome;
+        palco.innerHTML = '';
+
+        if (foto === '1') {
+            const img = document.createElement('img');
+            img.src = arquivo;
+            img.alt = nome;
+            img.className = 'pd-visor-midia';
+            palco.appendChild(img);
+        } else {
+            const video = document.createElement('video');
+            video.src = arquivo;
+            video.controls = true;
+            video.autoplay = true;
+            video.className = 'pd-visor-midia';
+            palco.appendChild(video);
+        }
+
+        modal.show();
+    });
+
+    document.getElementById('pd-tela-cheia')?.addEventListener('click', () => {
+        // Tela cheia no elemento de mídia, não no modal: assim o vídeo mantém
+        // os controles nativos do player em tela cheia.
+        const midia = palco.querySelector('.pd-visor-midia') || palco;
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            midia.requestFullscreen?.();
+        }
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        const video = palco.querySelector('video');
+        if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+        palco.innerHTML = '';
+    });
+}
+
+function montarTrocaDeStatus() {
     const painel = document.getElementById('pedido-status');
     if (!painel) return;
 
     const motivo = document.getElementById('pedido-motivo');
     const erro = document.getElementById('pedido-motivo-erro');
 
+    // Sair de "pago" mexe no saldo do vendedor — o aviso precisa dizer isso,
+    // não só perguntar "tem certeza?".
+    const estavaPago = painel.dataset.statusAtual === 'pago';
     const avisos = {
         pago: 'Confirmar o pagamento? Os arquivos serão liberados ao comprador e o valor será creditado ao vendedor.',
-        cancelado: 'Cancelar este pedido?',
-        pendente: 'Reabrir este pedido para pagamento?',
+        cancelado: estavaPago
+            ? 'Cancelar este pedido PAGO? O valor será estornado do saldo do vendedor.'
+            : 'Cancelar este pedido?',
+        pendente: estavaPago
+            ? 'Voltar este pedido PAGO para aguardando pagamento? O valor será estornado do saldo do vendedor.'
+            : 'Voltar este pedido para aguardando pagamento?',
     };
 
     painel.addEventListener('click', async (e) => {
@@ -51,4 +120,4 @@ document.addEventListener('DOMContentLoaded', () => {
             painel.querySelectorAll('.js-trocar-status').forEach((b) => { b.disabled = false; });
         }
     });
-});
+}

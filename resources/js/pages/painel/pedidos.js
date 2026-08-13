@@ -10,8 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
     if (isAdmin) columns.push({ data: 'cliente' });
     columns.push(
+        // Nome e e-mail vêm juntos numa célula só (render no servidor).
         { data: 'comprador_nome', defaultContent: '—' },
-        { data: 'comprador_email', defaultContent: '—' },
         { data: 'total' },
         { data: 'payment_method', defaultContent: '—' },
         { data: 'status' },

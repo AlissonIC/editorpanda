@@ -1,5 +1,5 @@
 /**
- * extractVideoThumbnail — gera um JPEG quadrado (default 150x150) do frame
+ * extractVideoThumbnail — gera um JPEG quadrado (default 320x320) do frame
  * localizado a ~10% da duração do vídeo. Usa o <video> nativo + canvas.
  *
  * Se `file` for uma imagem, delega para `extractImageThumbnail` (mesmo formato
@@ -16,11 +16,11 @@ export function extractVideoThumbnail(file, opts = {}) {
 }
 
 /**
- * extractImageThumbnail — carrega a imagem via <img> e faz cover-crop 150x150.
+ * extractImageThumbnail — carrega a imagem via <img> e faz cover-crop 320x320.
  * Mesmo contrato de retorno que a versão de vídeo.
  */
 export function extractImageThumbnail(file, {
-    size = 150,
+    size = 320,
     quality = 0.85,
     timeoutMs = 20_000,
 } = {}) {
@@ -63,7 +63,7 @@ export function extractImageThumbnail(file, {
 }
 
 function _extractFromVideo(file, {
-    size = 150,
+    size = 320,
     quality = 0.85,
     seekPct = 0.1,
     timeoutMs = 20_000,

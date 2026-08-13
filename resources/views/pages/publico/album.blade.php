@@ -87,8 +87,12 @@
                                 <input type="checkbox" class="pv-video-check" value="{{ $v['id'] }}">
                                 <div class="pv-check-badge"><i class="bi bi-check-lg"></i></div>
                             </label>
+                            {{-- Só a miniatura: o nome é gerado pelo sistema
+                                 (vid_123.mp4) e não diz nada pro comprador — ele
+                                 escolhe pela imagem. O nome continua aparecendo
+                                 no player em tela cheia. --}}
                             <button type="button" class="pv-video-play-btn" data-video-index="{{ $i }}"
-                                    title="{{ $itemEhImagem ? 'Ampliar foto' : 'Pré-visualizar' }}">
+                                    title="{{ $itemEhImagem ? 'Ampliar foto' : 'Pré-visualizar' }} — {{ $v['nome'] }}">
                                 <div class="pv-video-thumb">
                                     @if($v['thumbnail_url'])
                                         <img src="{{ $v['thumbnail_url'] }}" alt="" loading="lazy" decoding="async">
@@ -99,14 +103,11 @@
                                     <div class="pv-play-overlay">
                                         <i class="bi {{ $itemEhImagem ? 'bi-arrows-fullscreen' : 'bi-play-circle-fill' }}"></i>
                                     </div>
+                                    @unless($itemEhImagem)
+                                        <span class="pv-video-duracao">{{ $v['duracao'] }}</span>
+                                    @endunless
                                 </div>
                             </button>
-                            <div class="pv-video-info">
-                                <div class="text-truncate small fw-medium">{{ $v['nome'] }}</div>
-                                @unless($itemEhImagem)
-                                    <div class="small text-muted">{{ $v['duracao'] }}</div>
-                                @endunless
-                            </div>
                         </div>
                     @endforeach
                 </div>

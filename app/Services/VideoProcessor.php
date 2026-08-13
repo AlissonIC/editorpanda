@@ -49,6 +49,12 @@ class VideoProcessor
     // Qualidade JPEG do processado de imagem (2-31, menor = melhor; 3 = alta).
     private const JPG_QUALITY = 3;
 
+    // Lado da miniatura quadrada. Precisa acompanhar o `size` default de
+    // resources/js/lib/video-thumbnail.js — a do navegador aparece durante o
+    // upload e a do servidor a substitui no fim; tamanhos diferentes fariam a
+    // imagem "pular" de nitidez ao concluir o processamento.
+    private const THUMB_SIZE = 320;
+
     // Preview público: metade do processado. Vive aqui porque o filter graph
     // da passada única precisa do tamanho antes de montar a watermark.
     private const PREVIEW_WIDTH = 540;
@@ -429,7 +435,11 @@ class VideoProcessor
             $this->ffmpegBin, '-y', '-hide_banner', '-loglevel', 'error',
             ...$seekArgs,
             '-i', $source,
-            '-vf', 'scale=150:150:force_original_aspect_ratio=increase,crop=150:150',
+            // 320 e não 150: a grade do álbum público mostra o ladrilho em
+            // ~130px, e todo celular tem tela 2x ou 3x — em 150px a miniatura
+            // chegava borrada. O JPEG sai em ~20 KB, diferença irrelevante.
+            '-vf', 'scale=' . self::THUMB_SIZE . ':' . self::THUMB_SIZE
+                . ':force_original_aspect_ratio=increase,crop=' . self::THUMB_SIZE . ':' . self::THUMB_SIZE,
             '-frames:v', '1',
             '-q:v', '4',
             '-threads', '1',

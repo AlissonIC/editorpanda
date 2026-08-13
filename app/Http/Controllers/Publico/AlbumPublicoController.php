@@ -30,9 +30,11 @@ class AlbumPublicoController extends Controller
         // SSR carrega só a primeira página; o restante é infinite scroll.
         // Isso evita renderizar 500 cards em álbuns grandes (HTML enorme,
         // paint travado, dezenas de MB de thumbnails baixadas de cara).
+        // Do mais recente pro mais antigo: quem acabou de ser fotografado abre
+        // a página querendo ver o que subiu agora, não o começo do evento.
         $videosDb = $baseQuery
             ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path', 'updated_at'])
-            ->orderBy('id')
+            ->orderByDesc('id')
             ->limit(self::PAGE_SIZE)
             ->get();
 
@@ -53,6 +55,10 @@ class AlbumPublicoController extends Controller
      * Cursor-based (por ID) — mais eficiente que offset em álbuns grandes
      * e imune a duplicações/gaps se novos vídeos forem publicados durante
      * a navegação do cliente.
+     *
+     * A ordem é decrescente, então o cursor anda pra BAIXO: `id < after`.
+     * Enviar um vídeo novo enquanto alguém rola não empurra nada — o id novo
+     * é maior que o cursor e simplesmente fica fora desta sessão de scroll.
      */
     public function listarVideos(Album $album, Request $request): JsonResponse
     {
@@ -65,9 +71,9 @@ class AlbumPublicoController extends Controller
 
         $videosDb = $album->videos()
             ->where('status', 'concluido')
-            ->when($after > 0, fn ($q) => $q->where('id', '>', $after))
+            ->when($after > 0, fn ($q) => $q->where('id', '<', $after))
             ->select(['id', 'album_id', 'nome', 'status', 'thumbnail_path', 'disk', 'duracao_segundos', 'arquivo_preview_path', 'updated_at'])
-            ->orderBy('id')
+            ->orderByDesc('id')
             ->limit($limit)
             ->get();
 

@@ -40,11 +40,26 @@ class PedidosController extends Controller
             ->addColumn('album', fn ($p) => $p->album?->nome ?? '—')
             ->addColumn('cliente', fn ($p) => $p->user?->nome ?? '—')
             ->addColumn('acoes', fn ($p) => view('pages.painel.partials.pedido-acoes', ['pedido' => $p])->render())
+            // Nome e e-mail na mesma célula: são o mesmo dado (quem comprou) e
+            // ocupavam duas colunas largas. A coluna continua sendo
+            // comprador_nome pro DataTables, então a ordenação segue por nome.
+            ->editColumn('comprador_nome', fn ($p) => view('pages.painel.partials.pedido-comprador', [
+                'nome' => $p->comprador_nome,
+                'email' => $p->comprador_email,
+            ])->render())
+            // A busca global só varre as colunas que o front declara. Sem isto,
+            // juntar as duas faria o e-mail deixar de ser pesquisável.
+            ->filterColumn('comprador_nome', function ($query, $keyword) {
+                $query->where(function ($q) use ($keyword) {
+                    $q->where('comprador_nome', 'like', "%{$keyword}%")
+                        ->orWhere('comprador_email', 'like', "%{$keyword}%");
+                });
+            })
             ->editColumn('total', fn ($p) => 'R$ ' . number_format((float) $p->total, 2, ',', '.'))
             ->editColumn('payment_method', fn ($p) => MercadoPagoStatus::metodo($p->payment_method))
             ->editColumn('status', fn ($p) => '<span class="status-badge ' . $p->status . '">' . ucfirst($p->status) . '</span>')
             ->editColumn('created_at', fn ($p) => $p->created_at?->format('d/m/Y H:i'))
-            ->rawColumns(['status', 'acoes'])
+            ->rawColumns(['status', 'acoes', 'comprador_nome'])
             ->make(true);
     }
 
@@ -64,7 +79,7 @@ class PedidosController extends Controller
             'album.evento:id,nome',
             'user:id,nome,email',
             'cupom:id,codigo',
-            'itens.video:id,nome,duracao_segundos',
+            'itens.video:id,nome,duracao_segundos,arquivo_preview_path,arquivo_processado_path,thumbnail_path',
             // Mais recente primeiro: quem abre a tela quer o último acontecimento.
             'pagamentoLogs' => fn ($q) => $q->orderByDesc('id')->limit(50),
         ]);
@@ -82,7 +97,54 @@ class PedidosController extends Controller
             'gatewayCausas' => MercadoPagoStatus::causas($meta),
             'podeTrocarStatus' => auth()->user()->isAdmin(),
             'statusPermitidos' => $this->statusPermitidos($pedido),
+            'itens' => $this->itensComPreview($pedido),
         ]);
+    }
+
+    /**
+     * Itens do pedido prontos pra galeria: miniatura, arquivo cheio e tipo.
+     *
+     * Mostramos o arquivo PROCESSADO (limpo, sem marca d'água) e não o preview
+     * público: quem abre esta tela é o dono do acervo ou o admin, e é o que o
+     * comprador de fato levou que interessa conferir.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function itensComPreview(Pedido $pedido): array
+    {
+        return $pedido->itens->map(function ($item) {
+            $video = $item->video;
+
+            // Item de vídeo apagado do acervo: a linha continua valendo (a venda
+            // aconteceu), só não há o que exibir.
+            if (! $video) {
+                return [
+                    'nome' => 'Arquivo removido do acervo',
+                    'preco' => (float) $item->preco_unit,
+                    'filtro' => $item->filtro_preset,
+                    'disponivel' => false,
+                ];
+            }
+
+            // Mesma convenção do álbum público: o TIPO vem da extensão do
+            // preview, porque imagens antigas foram processadas como .mp4 e
+            // seguem sendo vídeo até serem reprocessadas.
+            $ext = strtolower(pathinfo((string) $video->arquivo_preview_path, PATHINFO_EXTENSION));
+            $ehFoto = in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true);
+
+            return [
+                'nome' => $video->nome,
+                'preco' => (float) $item->preco_unit,
+                'filtro' => $item->filtro_preset,
+                'disponivel' => (bool) $video->arquivo_processado_path,
+                'eh_foto' => $ehFoto,
+                'duracao' => (int) $video->duracao_segundos,
+                'thumb' => $video->thumbnail_path ? route('painel.videos.thumbnail.serve', $video) : null,
+                'arquivo' => $video->arquivo_processado_path
+                    ? route('painel.videos.stream.processado', $video)
+                    : null,
+            ];
+        })->all();
     }
 
     /**
@@ -126,27 +188,26 @@ class PedidosController extends Controller
     }
 
     /**
-     * Transições oferecidas a partir do status atual.
+     * Transições oferecidas a partir do status atual — todas menos "pro
+     * status que já está".
      *
-     * 'pago' é ponto sem volta pela tela: o vendedor já foi creditado e pode
-     * ter sacado o valor. Desfazer isso é estorno no gateway, com dinheiro
-     * andando de verdade — não é coisa de um <select>.
+     * Sair de 'pago' devolve o crédito do vendedor (ver
+     * PedidoPagamentoService::mudarPara) e pode deixar o saldo dele negativo
+     * se já tiver sacado. A tela avisa antes de disparar.
      *
      * @return array<string,string> status => rótulo do botão
      */
     private function statusPermitidos(Pedido $pedido): array
     {
-        return match ($pedido->status) {
-            Pedido::STATUS_PENDENTE => [
-                Pedido::STATUS_PAGO => 'Confirmar pagamento e liberar',
-                Pedido::STATUS_CANCELADO => 'Cancelar pedido',
-            ],
-            Pedido::STATUS_CANCELADO => [
-                Pedido::STATUS_PENDENTE => 'Reabrir para pagamento',
-                Pedido::STATUS_PAGO => 'Confirmar pagamento e liberar',
-            ],
-            default => [],
-        };
+        $todos = [
+            Pedido::STATUS_PAGO => 'Confirmar pagamento e liberar',
+            Pedido::STATUS_PENDENTE => 'Voltar para aguardando pagamento',
+            Pedido::STATUS_CANCELADO => 'Cancelar pedido',
+        ];
+
+        unset($todos[$pedido->status]);
+
+        return $todos;
     }
 
     /** Cliente só enxerga pedido dos próprios álbuns. */

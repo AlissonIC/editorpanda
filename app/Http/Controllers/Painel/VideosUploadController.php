@@ -632,8 +632,10 @@ class VideosUploadController extends Controller
             }
         }
 
+        // Tipo pela extensão, não fixo em mp4: álbuns de imagem saem em .jpg e
+        // o browser não renderiza JPEG anunciado como vídeo.
         return Storage::disk('local')->response($video->arquivo_processado_path, null, [
-            'Content-Type' => 'video/mp4',
+            'Content-Type' => $this->contentTypeParaPath($video->arquivo_processado_path),
         ]);
     }
 

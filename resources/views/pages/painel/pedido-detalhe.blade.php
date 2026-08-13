@@ -132,26 +132,46 @@
 
         {{-- Itens --}}
         <div class="panda-card mb-4">
-            <h6 class="fw-bold mb-3">Itens da compra ({{ $pedido->itens->count() }})</h6>
-            @if($pedido->itens->isEmpty())
+            <h6 class="fw-bold mb-3">Itens da compra ({{ count($itens) }})</h6>
+            @if(empty($itens))
                 <p class="small text-muted mb-0">Nenhum item registrado neste pedido.</p>
             @else
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                        <tbody>
-                            @foreach($pedido->itens as $item)
-                                <tr>
-                                    <td>
-                                        {{ $item->video?->nome ?? 'Arquivo removido' }}
-                                        @if($item->filtro_preset)
-                                            <span class="badge bg-light text-dark ms-1">filtro: {{ $item->filtro_preset }}</span>
-                                        @endif
-                                    </td>
-                                    <td class="text-end text-nowrap">{{ $brl($item->preco_unit) }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                <div class="pd-galeria">
+                    @foreach($itens as $item)
+                        <figure class="pd-item mb-0">
+                            @if($item['disponivel'])
+                                <button type="button" class="pd-thumb js-abrir-item"
+                                        data-nome="{{ $item['nome'] }}"
+                                        data-arquivo="{{ $item['arquivo'] }}"
+                                        data-foto="{{ $item['eh_foto'] ? '1' : '0' }}"
+                                        title="Abrir {{ $item['nome'] }}">
+                                    @if($item['thumb'])
+                                        <img src="{{ $item['thumb'] }}" alt="{{ $item['nome'] }}" loading="lazy">
+                                    @else
+                                        <span class="pd-sem-thumb"><i class="bi bi-file-earmark"></i></span>
+                                    @endif
+                                    <span class="pd-lupa"><i class="bi bi-arrows-fullscreen"></i></span>
+                                    @if(! $item['eh_foto'] && $item['duracao'] > 0)
+                                        <span class="pd-duracao">
+                                            {{ gmdate($item['duracao'] >= 3600 ? 'H:i:s' : 'i:s', $item['duracao']) }}
+                                        </span>
+                                    @endif
+                                </button>
+                            @else
+                                <span class="pd-thumb pd-thumb-vazio" title="Arquivo não está mais disponível">
+                                    <i class="bi bi-file-earmark-x"></i>
+                                </span>
+                            @endif
+
+                            <figcaption class="pd-legenda">
+                                <span class="text-truncate d-block">{{ $item['nome'] }}</span>
+                                <span class="text-muted">{{ $brl($item['preco']) }}</span>
+                                @if($item['filtro'])
+                                    <span class="badge bg-light text-dark">filtro: {{ $item['filtro'] }}</span>
+                                @endif
+                            </figcaption>
+                        </figure>
+                    @endforeach
                 </div>
             @endif
         </div>
@@ -217,37 +237,57 @@
         {{-- Troca manual de status --}}
         @if($podeTrocarStatus)
             <div class="panda-card" id="pedido-status"
-                 data-url="{{ route('painel.pedidos.status', $pedido) }}">
+                 data-url="{{ route('painel.pedidos.status', $pedido) }}"
+                 data-status-atual="{{ $pedido->status }}">
                 <h6 class="fw-bold mb-2">Alterar status</h6>
 
-                @if(empty($statusPermitidos))
-                    <p class="small text-muted mb-0">
-                        Pedido pago não pode ser revertido por aqui: o vendedor já foi creditado e
-                        pode ter sacado o valor. Estorno é feito no painel do Mercado Pago.
-                    </p>
-                @else
-                    <p class="small text-muted">
-                        Use quando o pagamento aconteceu fora do sistema ou o gateway não confirmou.
-                        Confirmar libera os arquivos e credita o vendedor.
-                    </p>
+                <p class="small text-muted">
+                    Use quando o pagamento aconteceu fora do sistema ou o gateway não confirmou.
+                    Confirmar libera os arquivos ao comprador e credita o vendedor.
+                </p>
 
-                    <label class="form-label small mb-1">Motivo <span class="text-danger">*</span></label>
-                    <textarea class="form-control form-control-sm mb-2" id="pedido-motivo" rows="2"
-                              maxlength="300" placeholder="Ex.: comprovante de PIX enviado por e-mail"></textarea>
-                    <div class="invalid-feedback d-block small d-none" id="pedido-motivo-erro"></div>
-
-                    <div class="d-grid gap-2">
-                        @foreach($statusPermitidos as $valor => $rotulo)
-                            <button type="button"
-                                    class="btn btn-sm {{ $valor === 'pago' ? 'btn-dark-panda' : 'btn-outline-secondary' }} js-trocar-status"
-                                    data-status="{{ $valor }}">
-                                {{ $rotulo }}
-                            </button>
-                        @endforeach
+                @if($pedido->status === 'pago')
+                    <div class="alert alert-warning py-2 small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Tirar este pedido de "pago" <strong>estorna o valor</strong> do saldo do vendedor.
+                        Se ele já sacou, o saldo fica negativo até a próxima venda cobrir.
                     </div>
                 @endif
+
+                <label class="form-label small mb-1">Motivo <span class="text-danger">*</span></label>
+                <textarea class="form-control form-control-sm mb-2" id="pedido-motivo" rows="2"
+                          maxlength="300" placeholder="Ex.: comprovante de PIX enviado por e-mail"></textarea>
+                <div class="invalid-feedback d-block small d-none" id="pedido-motivo-erro"></div>
+
+                <div class="d-grid gap-2">
+                    @foreach($statusPermitidos as $valor => $rotulo)
+                        <button type="button"
+                                class="btn btn-sm {{ $valor === 'pago' ? 'btn-dark-panda' : 'btn-outline-secondary' }} js-trocar-status"
+                                data-status="{{ $valor }}">
+                            {{ $rotulo }}
+                        </button>
+                    @endforeach
+                </div>
             </div>
         @endif
+    </div>
+</div>
+{{-- Visualizador em tela cheia dos itens comprados --}}
+<div class="modal fade" id="modal-item" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content pd-visor">
+            <div class="modal-header border-0 py-2">
+                <h6 class="modal-title text-truncate mb-0" id="pd-visor-nome"></h6>
+                <div class="d-flex gap-2 align-items-center">
+                    <button type="button" class="btn btn-sm btn-outline-light" id="pd-tela-cheia"
+                            title="Tela cheia">
+                        <i class="bi bi-arrows-fullscreen"></i>
+                    </button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body p-0" id="pd-visor-palco"></div>
+        </div>
     </div>
 </div>
 @endsection

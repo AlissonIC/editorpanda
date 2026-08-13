@@ -57,7 +57,7 @@ export class UploadTask {
         try {
             this.onStatus('iniciando');
 
-            // Extrai a thumbnail (150x150 JPEG a ~10% do vídeo) em paralelo com o upload.
+            // Extrai a thumbnail (320x320 JPEG a ~10% do vídeo) em paralelo com o upload.
             // Falhas aqui não quebram o upload — vídeo entra sem thumbnail e segue.
             const thumbPromise = extractVideoThumbnail(this.file).catch((e) => {
                 console.warn('[thumbnail] falha na extração:', e?.message || e);

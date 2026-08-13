@@ -127,25 +127,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const thumbInner = v.thumbnail_url
             ? `<img src="${escapeHtml(v.thumbnail_url)}" alt="" loading="lazy" decoding="async">`
             : `<i class="bi ${fallbackIcon}"></i>`;
-        const duracaoLinha = isImg
+        // Duração vira selo sobre a miniatura — mesmo card do SSR no Blade.
+        const duracaoTag = isImg
             ? ''
-            : `<div class="small text-muted">${escapeHtml(v.duracao)}</div>`;
+            : `<span class="pv-video-duracao">${escapeHtml(v.duracao)}</span>`;
         return `
             <div class="pv-video-card${cardExtraClass}${selectedClass}" data-video-index="${idx}" data-video-id="${v.id}">
                 <label class="pv-video-check-wrap">
                     <input type="checkbox" class="pv-video-check" value="${v.id}" ${checked}>
                     <div class="pv-check-badge"><i class="bi bi-check-lg"></i></div>
                 </label>
-                <button type="button" class="pv-video-play-btn" data-video-index="${idx}" title="${playTitle}">
+                <button type="button" class="pv-video-play-btn" data-video-index="${idx}" title="${playTitle} — ${escapeHtml(v.nome)}">
                     <div class="pv-video-thumb">
                         ${thumbInner}
                         <div class="pv-play-overlay"><i class="bi ${overlayIcon}"></i></div>
+                        ${duracaoTag}
                     </div>
                 </button>
-                <div class="pv-video-info">
-                    <div class="text-truncate small fw-medium">${escapeHtml(v.nome)}</div>
-                    ${duracaoLinha}
-                </div>
             </div>
         `;
     }

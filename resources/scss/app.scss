@@ -399,11 +399,13 @@ body {
 }
 .pv-album-body { padding: 0.85rem 1rem; }
 
-/* Grid de vídeos no álbum público */
+/* Grid de vídeos no álbum público.
+   ATENÇÃO: este bloco é duplicado mais abaixo no arquivo, e é o de lá que
+   vence na cascata. Mantido igual pra que os dois não briguem. */
 .pv-video-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+    gap: 0.6rem;
 }
 .pv-video-card {
     display: block;
@@ -435,12 +437,12 @@ body {
     }
 }
 .pv-video-thumb {
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 1;
     background: #eef1f6;
     color: #9ca3af;
     display: flex; align-items: center; justify-content: center;
     position: relative;
-    font-size: 2rem;
+    font-size: 1.75rem;
     img { width: 100%; height: 100%; object-fit: cover; }
 }
 .pv-check-badge {
@@ -1781,45 +1783,54 @@ body {
 /* ========================================================
    ÁLBUM PÚBLICO — cards de vídeo com botão de play + preview fullscreen
    ======================================================== */
+/* Grade de itens do álbum público.
+   Ladrilho quadrado, não 9:16: a miniatura é gerada em 150x150 (crop
+   centralizado) pelo VideoProcessor, então um card retrato só ampliava um
+   quadrado — imagem borrada e o dobro da altura por linha. Quadrado mostra a
+   miniatura no tamanho real e cabe muito mais item na tela. */
 .pv-video-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+    gap: 0.6rem;
 }
 .pv-video-card {
     position: relative;
     background: #fff;
-    border: 1px solid #eaecf4;
-    border-radius: 0.75rem;
+    border-radius: 0.6rem;
     overflow: hidden;
-    transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease;
+    /* `border: 0` explícito: este seletor é declarado duas vezes no arquivo e
+       o bloco de cima define uma borda de 2px. Sem zerar aqui, ela voltaria.
+       Com ladrilho pequeno e colado, moldura em cada item vira ruído — a
+       seleção é que ganha contorno. */
+    border: 0;
+    box-shadow: 0 1px 2px rgba(15,23,42,.06);
+    transition: box-shadow .15s ease, transform .15s ease;
 
     &:hover {
-        box-shadow: 0 6px 18px rgba(15,23,42,0.08);
-        border-color: #d5cffc;
+        box-shadow: 0 6px 16px rgba(15,23,42,.14);
         transform: translateY(-2px);
         .pv-play-overlay { opacity: 1; }
     }
     &.is-selected {
-        border-color: #7367f0;
-        box-shadow: 0 0 0 2px rgba(115,103,240,0.25);
-        .pv-check-badge { background: #7367f0; color: #fff; }
+        box-shadow: 0 0 0 3px #7367f0;
+        .pv-check-badge { background: #7367f0; color: #fff; border-color: #7367f0; }
     }
 }
 .pv-video-check-wrap {
     position: absolute;
-    top: 0.5rem; left: 0.5rem;
+    top: 0.35rem; left: 0.35rem;
     z-index: 2;
     cursor: pointer;
     .pv-video-check { display: none; }
     .pv-check-badge {
-        width: 26px; height: 26px;
-        border-radius: 0.4rem;
-        background: rgba(255,255,255,0.95);
-        border: 1px solid #d1d5db;
+        width: 24px; height: 24px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.92);
+        border: 1px solid rgba(255,255,255,0.9);
         color: #9ca3af;
         display: flex; align-items: center; justify-content: center;
-        font-size: 1rem;
+        font-size: .9rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,.25);
         transition: background .12s ease, color .12s ease;
     }
     .pv-video-check:checked + .pv-check-badge {
@@ -1838,14 +1849,14 @@ body {
 }
 .pv-video-thumb {
     position: relative;
-    aspect-ratio: 9 / 16;
+    aspect-ratio: 1;
     background: #f4f6fa;
     display: flex; align-items: center; justify-content: center;
     color: #cbd5e1;
-    font-size: 2rem;
+    font-size: 1.75rem;
     overflow: hidden;
 
-    img { width: 100%; height: 100%; object-fit: cover; }
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
 }
 .pv-play-overlay {
     position: absolute;
@@ -1853,13 +1864,30 @@ body {
     display: flex; align-items: center; justify-content: center;
     background: rgba(0,0,0,0.35);
     color: #fff;
-    font-size: 3rem;
+    font-size: 2rem;
     opacity: 0;
     transition: opacity .15s ease;
 }
-.pv-video-info {
-    padding: 0.55rem 0.75rem 0.65rem;
-    text-align: left;
+/* Duração sobre a miniatura em vez de numa linha própria: some uma linha de
+   texto por card, que era boa parte da altura reclamada. */
+.pv-video-duracao {
+    position: absolute;
+    right: 0.3rem; bottom: 0.3rem;
+    padding: 0.05rem 0.35rem;
+    font-size: 0.68rem;
+    line-height: 1.4;
+    color: #fff;
+    background: rgba(0,0,0,0.68);
+    border-radius: 0.3rem;
+    pointer-events: none;
+}
+
+/* Telas estreitas: 3 por linha ainda cabem confortavelmente. */
+@media (max-width: 400px) {
+    .pv-video-grid {
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 0.45rem;
+    }
 }
 
 /* -------- Modal player fullscreen -------- */
@@ -2257,4 +2285,109 @@ body {
     background: #fff;
     border-radius: .5rem;
     padding: .25rem;
+}
+
+/* ============================================================
+   Ficha do pedido — galeria dos itens comprados
+   ============================================================ */
+.pd-galeria {
+    display: grid;
+    /* auto-fill + minmax: 2 colunas no celular, até 6 no desktop, sem
+       media query e sem sobrar buraco no fim da linha. */
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: .85rem;
+}
+
+.pd-item {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    min-width: 0; /* deixa o text-truncate da legenda funcionar dentro do grid */
+}
+
+.pd-thumb {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    padding: 0;
+    overflow: hidden;
+    background: #eef1f6;
+    border: 1px solid #e2e5ea;
+    border-radius: .6rem;
+
+    img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform .18s ease;
+    }
+
+    &:hover img { transform: scale(1.05); }
+    &:hover .pd-lupa { opacity: 1; }
+}
+
+.pd-thumb-vazio,
+.pd-sem-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: #9aa2ae;
+    font-size: 1.5rem;
+}
+
+.pd-lupa {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 1.25rem;
+    background: rgba(0, 0, 0, .35);
+    opacity: 0;
+    transition: opacity .18s ease;
+}
+
+.pd-duracao {
+    position: absolute;
+    right: .3rem;
+    bottom: .3rem;
+    padding: .05rem .35rem;
+    font-size: .68rem;
+    color: #fff;
+    background: rgba(0, 0, 0, .7);
+    border-radius: .3rem;
+}
+
+.pd-legenda {
+    font-size: .75rem;
+    line-height: 1.3;
+    min-width: 0;
+}
+
+/* Visor em modal — fundo escuro pra não competir com a mídia */
+.pd-visor {
+    background: #14161a;
+    color: #f1f3f5;
+    border: 0;
+
+    .modal-header { background: rgba(255, 255, 255, .04); }
+
+    #pd-visor-palco {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 45vh;
+    }
+}
+
+.pd-visor-midia {
+    max-width: 100%;
+    /* Cabe na janela sem cortar nem forçar scroll do modal. */
+    max-height: 78vh;
+    display: block;
+    background: #000;
 }

@@ -58,7 +58,13 @@ class PedidoPagamentoService
                 ]);
             }
 
-            LogPagamento::info($lock, 'pedido.pago', "Total R$ {$lock->total} liberado");
+            // O valor creditado fica gravado no log, não só a fórmula: se o
+            // admin estornar o pedido depois de o plano ter mudado de taxa,
+            // recalcular devolveria um número diferente do que entrou.
+            LogPagamento::info($lock, 'pedido.pago', "Total R$ {$lock->total} liberado", [
+                'credito_vendedor' => $credito,
+                'taxa_aplicada' => $taxa,
+            ]);
 
             return true;
         });
@@ -99,45 +105,87 @@ class PedidoPagamentoService
         }
     }
 
-    /**
-     * Cancela o pedido.
-     *
-     * NÃO estorna saldo do vendedor. Cancelar um pedido que já foi pago é caso
-     * de estorno no gateway, com dinheiro andando de verdade — coisa que esta
-     * tela não faz. Por isso a tela só oferece cancelar quando o pedido ainda
-     * não foi pago (ver PedidosController::atualizarStatus).
-     */
+    /** Cancela o pedido. Se estava pago, devolve o crédito do vendedor. */
     public function cancelar(Pedido $pedido, ?string $motivo = null): void
     {
-        DB::transaction(function () use ($pedido, $motivo) {
-            $lock = Pedido::whereKey($pedido->id)->lockForUpdate()->first();
-            if ($lock->status === Pedido::STATUS_CANCELADO) {
-                return;
-            }
-
-            $lock->update(['status' => Pedido::STATUS_CANCELADO]);
-            LogPagamento::warning($lock, $motivo !== null ? 'status.manual' : 'pedido.cancelado',
-                $motivo ?? 'Pedido cancelado');
-        });
+        $this->mudarPara($pedido, Pedido::STATUS_CANCELADO, $motivo ?? 'Pedido cancelado');
     }
 
     /**
      * Volta o pedido pra 'pendente' — usado quando o admin liberou por engano
-     * ou o comprador vai tentar pagar de novo.
-     *
-     * Só é permitido a partir de 'cancelado' (ver PedidosController): sair de
-     * 'pago' exigiria debitar o vendedor, que pode já ter sacado o valor.
+     * ou o comprador vai tentar pagar de novo. Se estava pago, também estorna.
      */
     public function reabrir(Pedido $pedido, ?string $motivo = null): void
     {
-        DB::transaction(function () use ($pedido, $motivo) {
+        $this->mudarPara($pedido, Pedido::STATUS_PENDENTE, $motivo ?? 'Pedido reaberto');
+    }
+
+    /**
+     * Tira o pedido de 'pago' e desfaz o crédito do vendedor.
+     *
+     * O valor devolvido é o que REALMENTE entrou, lido do log da liberação —
+     * não recalculado. Se a taxa do plano mudou desde então, recalcular
+     * devolveria um número diferente do que foi creditado, e a diferença
+     * ficaria pendurada no saldo pra sempre.
+     *
+     * O saldo pode ficar NEGATIVO se o vendedor já sacou. É proposital: o
+     * negativo é a representação honesta da dívida e o fluxo de saque já
+     * recusa retirada acima do saldo, então ele não saca de novo até quitar.
+     * Bloquear a correção deixaria o pedido errado para sempre — pior.
+     */
+    private function mudarPara(Pedido $pedido, string $novoStatus, string $motivo): void
+    {
+        DB::transaction(function () use ($pedido, $novoStatus, $motivo) {
             $lock = Pedido::whereKey($pedido->id)->lockForUpdate()->first();
-            if ($lock->status === Pedido::STATUS_PENDENTE) {
+            if ($lock->status === $novoStatus) {
                 return;
             }
 
-            $lock->update(['status' => Pedido::STATUS_PENDENTE]);
-            LogPagamento::info($lock, 'status.manual', $motivo ?? 'Pedido reaberto');
+            $estornou = null;
+            if ($lock->status === Pedido::STATUS_PAGO) {
+                $estornou = $this->estornarCredito($lock);
+            }
+
+            // Sai de 'pago' → a data de pagamento deixa de valer. Este método
+            // só recebe 'cancelado' e 'pendente'; virar pago é marcarComoPago.
+            $lock->update(['status' => $novoStatus, 'pago_em' => null]);
+
+            $sufixo = $estornou !== null
+                ? ' — R$ ' . number_format($estornou, 2, ',', '.') . ' estornado do saldo do vendedor'
+                : '';
+
+            LogPagamento::warning($lock, 'status.manual', $motivo . $sufixo);
         });
+    }
+
+    /** @return float Valor debitado do vendedor. */
+    private function estornarCredito(Pedido $pedido): float
+    {
+        $vendedor = User::whereKey($pedido->user_id)->lockForUpdate()->with('plano')->first();
+        if (! $vendedor) {
+            return 0.0;
+        }
+
+        $log = LogPagamento::where('pedido_id', $pedido->id)
+            ->where('evento', 'pedido.pago')
+            ->orderByDesc('id')
+            ->first();
+
+        $credito = $log?->payload['credito_vendedor'] ?? null;
+
+        // Pedidos liberados antes de o log guardar o valor caem no recálculo.
+        if ($credito === null) {
+            $taxa = (float) ($vendedor->plano?->taxa_por_venda ?? 0);
+            $credito = round((float) $pedido->total * (1 - $taxa / 100), 2);
+        }
+
+        $creditoCents = (int) round((float) $credito * 100);
+        if ($creditoCents > 0) {
+            DB::table('users')->where('id', $vendedor->id)->update([
+                'saldo_disponivel' => DB::raw("saldo_disponivel - ({$creditoCents} / 100)"),
+            ]);
+        }
+
+        return (float) $credito;
     }
 }
