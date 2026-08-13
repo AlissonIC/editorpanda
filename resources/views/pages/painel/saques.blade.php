@@ -47,6 +47,10 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                {{-- Saldo e mínimo aparecem UMA vez só, no lugar que importa
+                     em cada situação: no alerta quando ainda não dá pra sacar,
+                     e colado no campo quando dá. Antes os dois números eram
+                     repetidos em três lugares da mesma tela. --}}
                 @if($saldo < $minimo)
                     <div class="alert alert-warning py-2 small mb-3">
                         <i class="bi bi-exclamation-triangle me-1"></i>
@@ -54,10 +58,6 @@
                         saque mínimo é R$ {{ number_format($minimo, 2, ',', '.') }}.
                     </div>
                 @endif
-
-                <p class="small text-muted">Valor mínimo R$ {{ number_format($minimo, 2, ',', '.') }}. Saldo atual:
-                    <strong>R$ {{ number_format($saldo, 2, ',', '.') }}</strong>.
-                </p>
 
                 <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-baseline">
@@ -70,9 +70,12 @@
                     </div>
                     <input type="text" name="valor" data-mask="money" class="form-control" required>
                     <div class="invalid-feedback" data-field="valor"></div>
-                    <div class="form-text small" id="saque-disponivel">
-                        Disponível para saque: R$ {{ number_format($saldo, 2, ',', '.') }}
-                    </div>
+                    @if($saldo >= $minimo)
+                        <div class="form-text small" id="saque-disponivel">
+                            Disponível para saque: <strong>R$ {{ number_format($saldo, 2, ',', '.') }}</strong>
+                            · mínimo R$ {{ number_format($minimo, 2, ',', '.') }}
+                        </div>
+                    @endif
                 </div>
 
                 <div class="mb-3">

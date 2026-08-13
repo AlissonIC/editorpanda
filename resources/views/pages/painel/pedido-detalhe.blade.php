@@ -235,15 +235,30 @@
         @endif
 
         {{-- Troca manual de status --}}
-        @if($podeTrocarStatus)
-            <div class="panda-card" id="pedido-status"
-                 data-url="{{ route('painel.pedidos.status', $pedido) }}"
-                 data-status-atual="{{ $pedido->status }}">
-                <h6 class="fw-bold mb-2">Alterar status</h6>
+        <div class="panda-card" id="pedido-status"
+             data-url="{{ route('painel.pedidos.status', $pedido) }}"
+             data-status-atual="{{ $pedido->status }}">
+            <h6 class="fw-bold mb-2">Alterar status</h6>
 
+            @if(empty($statusPermitidos))
+                {{-- Nada some sem explicação: um card vazio faz o usuário achar
+                     que a tela quebrou. --}}
+                <p class="small text-muted mb-0">
+                    @if($ehAdmin)
+                        Não há mudança de status disponível para este pedido.
+                    @else
+                        Este pedido já foi {{ $pedido->status }} e só o administrador pode alterá-lo
+                        a partir daqui — mexer nele agora move dinheiro e o acesso do comprador.
+                    @endif
+                </p>
+            @else
                 <p class="small text-muted">
-                    Use quando o pagamento aconteceu fora do sistema ou o gateway não confirmou.
-                    Confirmar libera os arquivos ao comprador e credita o vendedor.
+                    @if($ehAdmin)
+                        Use quando o pagamento aconteceu fora do sistema ou o gateway não confirmou.
+                        Confirmar libera os arquivos ao comprador e credita o vendedor.
+                    @else
+                        Este pedido não foi pago. Você pode cancelá-lo para tirá-lo da sua lista.
+                    @endif
                 </p>
 
                 @if($pedido->status === 'pago')
@@ -268,8 +283,14 @@
                         </button>
                     @endforeach
                 </div>
-            </div>
-        @endif
+
+                @unless($ehAdmin)
+                    <p class="small text-muted mt-2 mb-0">
+                        Confirmar pagamento é uma ação do administrador.
+                    </p>
+                @endunless
+            @endif
+        </div>
     </div>
 </div>
 {{-- Visualizador em tela cheia dos itens comprados --}}

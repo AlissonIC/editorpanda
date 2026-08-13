@@ -71,10 +71,11 @@ function montarVisor() {
 
 function montarTrocaDeStatus() {
     const painel = document.getElementById('pedido-status');
-    if (!painel) return;
-
     const motivo = document.getElementById('pedido-motivo');
     const erro = document.getElementById('pedido-motivo-erro');
+    // O card agora aparece sempre (explicando quando não há ação), mas os
+    // campos só existem quando há alguma transição possível.
+    if (!painel || !motivo || !erro) return;
 
     // Sair de "pago" mexe no saldo do vendedor — o aviso precisa dizer isso,
     // não só perguntar "tem certeza?".

@@ -95,7 +95,7 @@ class PedidosController extends Controller
             // erro de integração, não de pagamento.
             'gatewayMensagem' => $meta['message'] ?? null,
             'gatewayCausas' => MercadoPagoStatus::causas($meta),
-            'podeTrocarStatus' => auth()->user()->isAdmin(),
+            'ehAdmin' => auth()->user()->isAdmin(),
             'statusPermitidos' => $this->statusPermitidos($pedido),
             'itens' => $this->itensComPreview($pedido),
         ]);
@@ -148,15 +148,11 @@ class PedidosController extends Controller
     }
 
     /**
-     * Troca manual de status.
-     *
-     * Só admin: marcar um pedido como pago credita o saldo do vendedor, então
-     * deixar o próprio dono do álbum fazer isso seria deixá-lo criar dinheiro
-     * no sistema. Ele continua vendo a ficha completa do pedido dele.
+     * Troca manual de status. O que cada um pode fazer sai de
+     * statusPermitidos() — e é reconferido aqui, não só escondido na tela.
      */
     public function atualizarStatus(Request $request, Pedido $pedido, PedidoPagamentoService $servico): JsonResponse
     {
-        abort_unless(auth()->user()->isAdmin(), 403, 'Só o administrador pode alterar o status de um pedido.');
         $this->autorizar($pedido);
 
         $dados = $request->validate([
@@ -169,9 +165,11 @@ class PedidosController extends Controller
 
         $permitidos = $this->statusPermitidos($pedido);
         if (! in_array($dados['status'], array_keys($permitidos), true)) {
-            return response()->json([
-                'message' => 'Essa mudança de status não é permitida a partir de "' . $pedido->status . '".',
-            ], 422);
+            $motivoRecusa = ! auth()->user()->isAdmin() && $dados['status'] === Pedido::STATUS_PAGO
+                ? 'Confirmar pagamento é uma ação do administrador.'
+                : 'Essa mudança de status não é permitida a partir de "' . $pedido->status . '".';
+
+            return response()->json(['message' => $motivoRecusa], 403);
         }
 
         $motivo = auth()->user()->nome . ': ' . $dados['motivo'];
@@ -188,8 +186,16 @@ class PedidosController extends Controller
     }
 
     /**
-     * Transições oferecidas a partir do status atual — todas menos "pro
-     * status que já está".
+     * Transições oferecidas a partir do status atual.
+     *
+     * O dono do álbum só pode CANCELAR um pedido que ainda não foi pago —
+     * faxina de carrinho abandonado, sem efeito no dinheiro.
+     *
+     * Confirmar pagamento é do admin, e não por desconfiança: confirmar
+     * credita o saldo do próprio dono do álbum. Se ele pudesse fazer isso,
+     * bastaria criar pedidos e marcá-los como pagos pra sacar dinheiro que
+     * comprador nenhum pagou. Sair de 'pago' é do admin pela razão espelhada:
+     * estorna o saldo e tira do comprador um arquivo que ele já pagou.
      *
      * Sair de 'pago' devolve o crédito do vendedor (ver
      * PedidoPagamentoService::mudarPara) e pode deixar o saldo dele negativo
@@ -199,6 +205,12 @@ class PedidosController extends Controller
      */
     private function statusPermitidos(Pedido $pedido): array
     {
+        if (! auth()->user()->isAdmin()) {
+            return $pedido->status === Pedido::STATUS_PENDENTE
+                ? [Pedido::STATUS_CANCELADO => 'Cancelar pedido']
+                : [];
+        }
+
         $todos = [
             Pedido::STATUS_PAGO => 'Confirmar pagamento e liberar',
             Pedido::STATUS_PENDENTE => 'Voltar para aguardando pagamento',
