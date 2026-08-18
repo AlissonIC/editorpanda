@@ -92,6 +92,10 @@ class UsuariosController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        // Mesma normalização do registro público — sem ela e-mails nasceriam
+        // com caixa diferente conforme a origem do cadastro.
+        $request->merge(['email' => mb_strtolower(trim((string) $request->input('email')))]);
+
         $data = $request->validate([
             'nome' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
@@ -116,6 +120,8 @@ class UsuariosController extends Controller
 
     public function update(Request $request, User $user): JsonResponse
     {
+        $request->merge(['email' => mb_strtolower(trim((string) $request->input('email')))]);
+
         $data = $request->validate([
             'nome' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email,' . $user->id],

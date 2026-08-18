@@ -21,6 +21,9 @@ class PerfilController extends Controller
     {
         $user = $request->user();
 
+        // Mesma normalização do registro — e-mail é sempre minúsculo no banco.
+        $request->merge(['email' => mb_strtolower(trim((string) $request->input('email')))]);
+
         $data = $request->validate([
             'nome' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email,' . $user->id],

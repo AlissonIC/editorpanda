@@ -813,6 +813,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // Simplificação: criamos o pedido APENAS no primeiro submit; Bricks usa o
     // total local (cliente) antes disso.
     let pedidoCriado = null; // preenche após criarPedidoNoServidor()
+    let pedidoAssinatura = null; // snapshot do que gerou o pedido
+
+    // O pedido congela itens/total/cupom do momento da criação. Se o comprador
+    // mudar seleção, cupom, mesclagem ou e-mail depois, o pedido antigo não
+    // pode ser reaproveitado — cobraria diferente do resumo em tela.
+    function assinaturaAtual() {
+        return JSON.stringify({
+            ids: [...selectedIds].sort((a, b) => a - b),
+            cupom: form.codigo_cupom?.value.trim().toUpperCase() || null,
+            mesclar: !!(mergeCheck && mergeCheck.checked && selectedIds.size >= 2),
+            email: form.email?.value.trim().toLowerCase() || '',
+        });
+    }
+
+    async function obterPedido() {
+        const sig = assinaturaAtual();
+        if (pedidoCriado && pedidoAssinatura === sig) return pedidoCriado;
+        const data = await criarPedidoNoServidor();
+        pedidoCriado = data;
+        pedidoAssinatura = sig;
+        return data;
+    }
 
     async function atualizarMetodoUI() {
         const metodo = form.querySelector('input[name="metodo"]:checked')?.value || 'pix';
@@ -822,7 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Se já temos pedido criado, monta com public_key real; senão monta
             // com a public_key vindo do backend após o primeiro submit.
             // Pra economizar chamada: só monta quando temos public_key.
-            if (pedidoCriado) {
+            if (pedidoCriado && pedidoAssinatura === assinaturaAtual()) {
                 await mountCardBricks('pv-bricks-container', {
                     publicKey: pedidoCriado.public_key,
                     amount: pedidoCriado.total,
@@ -839,11 +861,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         bricksContainer.innerHTML = '<div class="text-muted small text-center py-3">Preencha nome + e-mail acima pra continuar.</div>';
                         return;
                     }
-                    pedidoCriado = await criarPedidoNoServidor();
+                    const pedido = await obterPedido();
                     await mountCardBricks('pv-bricks-container', {
-                        publicKey: pedidoCriado.public_key,
-                        amount: pedidoCriado.total,
-                        onSubmit: (tp) => processarCartao(pedidoCriado, tp),
+                        publicKey: pedido.public_key,
+                        amount: pedido.total,
+                        onSubmit: (tp) => processarCartao(pedido, tp),
                     });
                 } catch (err) {
                     // Se o erro é "já comprado", overlay #pv-pre-check cobre — não vira toast.
@@ -865,6 +887,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     metodoRadios.forEach((r) => r.addEventListener('change', atualizarMetodoUI));
+
+    // Bricks montado congela o valor no widget. Se algo que afeta o total mudar
+    // (seleção, cupom, mesclar, e-mail) com o cartão aberto, recria o pedido e
+    // remonta com o valor novo — senão o onSubmit cobraria o pedido antigo.
+    document.addEventListener('change', () => {
+        const metodo = form.querySelector('input[name="metodo"]:checked')?.value;
+        if (metodo === 'cartao' && pedidoCriado && pedidoAssinatura !== assinaturaAtual()) {
+            atualizarMetodoUI();
+        }
+    });
 
     // Cancelar PIX: para polling e volta pro form (pedido fica em pendente no BD)
     document.getElementById('pv-pix-cancel')?.addEventListener('click', () => {
@@ -899,8 +931,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.textContent = gratis ? 'Enviando…' : 'Gerando PIX…';
 
         try {
-            const data = pedidoCriado || await criarPedidoNoServidor();
-            pedidoCriado = data;
+            const data = await obterPedido();
             if (data.gratis) {
                 window.showToast(data.message || 'Enviamos por e-mail em instantes.', 'success');
                 btn.textContent = 'Enviado ✓';

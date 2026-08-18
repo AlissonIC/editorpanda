@@ -64,9 +64,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('form-evento');
     if (!form) return;
 
-    // Seletor de posição (grid clicável ↔ hidden input logo_posicao)
+    // Seletor de posição (grid clicável ↔ hidden input watermark_posicao)
     const posGrid = form.querySelector('.pos-grid');
-    const posInput = form.querySelector('input[name="logo_posicao"]');
+    const posInput = form.querySelector('input[name="watermark_posicao"]');
     function paintPos(value) {
         posInput.value = value;
         posGrid.querySelectorAll('.pos-cell').forEach((c) => {
@@ -162,8 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('crud:filled', (e) => {
         const data = e.detail?.data || {};
         setLogoPreview(data.logo_url || null);
-        paintPos(data.logo_posicao || 'top-right');
-        scaleRange.value = data.logo_escala ?? 0.15;
+        paintPos(data.watermark_posicao || 'top-right');
+        scaleRange.value = data.watermark_escala ?? 0.15;
         paintScale();
         logoHint.classList.add('d-none');
     });

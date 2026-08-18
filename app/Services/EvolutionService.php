@@ -137,6 +137,177 @@ class EvolutionService
         return ['ok' => true, 'message' => "Conectado. Instância '{$instance}' está ativa."];
     }
 
+    // ==================== Gestão de instâncias ====================
+    // Usados pela UI de /painel/configuracoes pra criar/conectar/excluir
+    // instâncias sem precisar abrir o manager do Evolution.
+
+    /**
+     * Lista instâncias do servidor. Aceita credenciais explícitas pra validar
+     * URL/API key ANTES de salvar (fluxo "Conectar" da UI).
+     * @return array ['ok' => bool, 'message' => string, 'instancias' => array[{nome,status,numero,perfil}]]
+     */
+    public function listarInstancias(?string $url = null, ?string $apiKey = null): array
+    {
+        $url = $url !== null ? rtrim($url, '/') : Configuracao::evolutionUrl();
+        $apiKey = $apiKey ?? Configuracao::evolutionApiKey();
+        if (! $url || ! $apiKey) {
+            return ['ok' => false, 'message' => 'URL ou API key não configurada.', 'instancias' => []];
+        }
+
+        try {
+            $response = Http::timeout(self::TIMEOUT)->acceptJson()
+                ->withHeaders(['apikey' => $apiKey])
+                ->get($url . '/instance/fetchInstances');
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'Não foi possível acessar o servidor Evolution: ' . $e->getMessage(), 'instancias' => []];
+        }
+
+        if ($response->status() === 401) {
+            return ['ok' => false, 'message' => 'API key inválida (401 do Evolution).', 'instancias' => []];
+        }
+        if (! $response->successful()) {
+            return ['ok' => false, 'message' => "Evolution retornou HTTP {$response->status()}.", 'instancias' => []];
+        }
+
+        $instancias = collect($response->json() ?? [])
+            ->map(fn ($i) => $this->normalizarInstancia($i))
+            ->filter(fn ($i) => $i['nome'] !== null)
+            ->values()
+            ->all();
+
+        return ['ok' => true, 'message' => 'OK', 'instancias' => $instancias];
+    }
+
+    /** Cria uma instância (sem conectar — o QR vem depois via conectarInstancia). */
+    public function criarInstancia(string $nome): array
+    {
+        try {
+            $response = $this->httpClient()->post($this->urlPara('/instance/create'), [
+                'instanceName' => $nome,
+                'qrcode' => false,
+                'integration' => 'WHATSAPP-BAILEYS',
+            ]);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'Falha de rede: ' . $e->getMessage()];
+        }
+
+        if ($response->successful()) {
+            return ['ok' => true, 'message' => "Instância '{$nome}' criada."];
+        }
+
+        return ['ok' => false, 'message' => $this->extrairErro($response, 'Falha ao criar instância.')];
+    }
+
+    /**
+     * Pede o QR code de conexão. O Evolution renova o QR a cada chamada —
+     * a UI rechama quando o código expira (~40s).
+     * @return array ['ok','message','qrcode' => data-uri|null, 'pairing_code' => string|null, 'conectada' => bool]
+     */
+    public function conectarInstancia(string $nome): array
+    {
+        try {
+            $response = $this->httpClient()->get($this->urlPara('/instance/connect/' . rawurlencode($nome)));
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'Falha de rede: ' . $e->getMessage(), 'qrcode' => null, 'pairing_code' => null, 'conectada' => false];
+        }
+
+        if (! $response->successful()) {
+            return ['ok' => false, 'message' => $this->extrairErro($response, 'Falha ao gerar QR code.'), 'qrcode' => null, 'pairing_code' => null, 'conectada' => false];
+        }
+
+        $body = $response->json() ?? [];
+        // Já conectada → Evolution devolve o state em vez do QR
+        $state = $body['instance']['state'] ?? null;
+        if ($state === 'open') {
+            return ['ok' => true, 'message' => 'Instância já conectada.', 'qrcode' => null, 'pairing_code' => null, 'conectada' => true];
+        }
+
+        // v2 devolve {base64, code, pairingCode}; algumas versões aninham em {qrcode:{...}}
+        $qr = $body['base64'] ?? $body['qrcode']['base64'] ?? null;
+        $pairing = $body['pairingCode'] ?? $body['qrcode']['pairingCode'] ?? null;
+        if (! $qr && ! $pairing) {
+            return ['ok' => false, 'message' => 'Evolution não devolveu QR code — tente novamente em alguns segundos.', 'qrcode' => null, 'pairing_code' => null, 'conectada' => false];
+        }
+
+        return ['ok' => true, 'message' => 'QR gerado.', 'qrcode' => $qr, 'pairing_code' => $pairing, 'conectada' => false];
+    }
+
+    /** Estado da conexão: open (conectada), connecting, close. */
+    public function statusInstancia(string $nome): array
+    {
+        try {
+            $response = $this->httpClient()->get($this->urlPara('/instance/connectionState/' . rawurlencode($nome)));
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'Falha de rede: ' . $e->getMessage(), 'state' => null];
+        }
+
+        if (! $response->successful()) {
+            return ['ok' => false, 'message' => $this->extrairErro($response, 'Falha ao consultar status.'), 'state' => null];
+        }
+
+        $body = $response->json() ?? [];
+        return ['ok' => true, 'message' => 'OK', 'state' => $body['instance']['state'] ?? $body['state'] ?? null];
+    }
+
+    /** Desconecta do WhatsApp (logout) sem excluir a instância. */
+    public function desconectarInstancia(string $nome): array
+    {
+        try {
+            $response = $this->httpClient()->delete($this->urlPara('/instance/logout/' . rawurlencode($nome)));
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'Falha de rede: ' . $e->getMessage()];
+        }
+
+        return $response->successful()
+            ? ['ok' => true, 'message' => "Instância '{$nome}' desconectada."]
+            : ['ok' => false, 'message' => $this->extrairErro($response, 'Falha ao desconectar.')];
+    }
+
+    /** Exclui a instância. Faz logout antes — o Evolution recusa excluir instância conectada. */
+    public function excluirInstancia(string $nome): array
+    {
+        try {
+            // Logout best-effort: instância já desconectada devolve erro aqui, e tudo bem.
+            $this->httpClient()->delete($this->urlPara('/instance/logout/' . rawurlencode($nome)));
+            $response = $this->httpClient()->delete($this->urlPara('/instance/delete/' . rawurlencode($nome)));
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'Falha de rede: ' . $e->getMessage()];
+        }
+
+        return $response->successful()
+            ? ['ok' => true, 'message' => "Instância '{$nome}' excluída."]
+            : ['ok' => false, 'message' => $this->extrairErro($response, 'Falha ao excluir instância.')];
+    }
+
+    /** Achata os formatos v1/v2 do fetchInstances num shape único pra UI. */
+    private function normalizarInstancia(mixed $i): array
+    {
+        if (! is_array($i)) {
+            return ['nome' => null, 'status' => null, 'numero' => null, 'perfil' => null];
+        }
+        $nome = $i['name'] ?? $i['instance']['instanceName'] ?? null;
+        $status = $i['connectionStatus'] ?? $i['instance']['status'] ?? null;
+        $jid = $i['ownerJid'] ?? $i['instance']['owner'] ?? null;
+        $perfil = $i['profileName'] ?? $i['instance']['profileName'] ?? null;
+
+        return [
+            'nome' => $nome,
+            'status' => $status,
+            'numero' => $jid ? preg_replace('/\D/', '', explode('@', $jid)[0]) : null,
+            'perfil' => $perfil,
+        ];
+    }
+
+    private function extrairErro(Response $response, string $fallback): string
+    {
+        $body = $response->json() ?? [];
+        $msg = $body['response']['message'][0] ?? $body['response']['message'] ?? $body['message'] ?? null;
+        if (is_array($msg)) {
+            $msg = implode(' ', array_map(fn ($m) => is_string($m) ? $m : json_encode($m), $msg));
+        }
+        return is_string($msg) && $msg !== '' ? $msg : $fallback . " (HTTP {$response->status()})";
+    }
+
     /**
      * Remove tudo que não é dígito. Se sobrarem 10-11 dígitos (BR sem DDI),
      * prepende '55'. Fora disso, retorna null.

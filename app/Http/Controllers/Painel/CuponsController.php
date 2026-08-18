@@ -86,14 +86,24 @@ class CuponsController extends Controller
 
     private function salvar(Request $request, ?Cupom $cupom): JsonResponse
     {
+        // `after:now` só quando a data foi definida/alterada — o modal de edição
+        // reenvia a data antiga, e um cupom já expirado precisa continuar editável
+        // (ex.: só desativar ou corrigir o valor).
+        $expiraEnviada = $request->input('expira_em');
+        $expiraMudou = ($expiraEnviada ? strtotime($expiraEnviada) : null) !== $cupom?->expira_em?->getTimestamp();
+
         $data = $request->validate([
             'codigo' => ['required', 'string', 'max:60', 'regex:/^[A-Z0-9_\-]+$/i'],
             'tipo' => ['required', 'in:percentual,fixo'],
-            'valor' => ['required', 'numeric', 'min:0.01', 'max:9999.99'],
+            // Percentual é % (máx. 100); fixo é R$.
+            'valor' => [
+                'required', 'numeric', 'min:0.01',
+                $request->input('tipo') === Cupom::TIPO_PERCENTUAL ? 'max:100' : 'max:9999.99',
+            ],
             'restricao_album_id' => ['nullable', 'exists:albuns,id'],
             'restricao_evento_id' => ['nullable', 'exists:eventos,id'],
             'limite_usos' => ['nullable', 'integer', 'min:1', 'max:99999'],
-            'expira_em' => ['nullable', 'date', 'after:now'],
+            'expira_em' => $expiraMudou ? ['nullable', 'date', 'after:now'] : ['nullable', 'date'],
             'ativo' => ['nullable', 'boolean'],
             'emails' => ['nullable', 'array', 'max:200'],
             'emails.*' => ['email', 'max:180'],
@@ -115,6 +125,20 @@ class CuponsController extends Controller
                     ->where('user_id', auth()->id())->exists(),
                 403, 'Evento de restrição não pertence a você.',
             );
+        }
+
+        // Restrições combinadas precisam ser coerentes: podeSerUsadoEm() exige
+        // as duas ao mesmo tempo, então álbum de outro evento criaria um cupom
+        // que nunca casa em checkout algum.
+        if (! empty($data['restricao_album_id']) && ! empty($data['restricao_evento_id'])) {
+            $pertence = \App\Models\Album::whereKey($data['restricao_album_id'])
+                ->where('evento_id', $data['restricao_evento_id'])->exists();
+            if (! $pertence) {
+                return response()->json([
+                    'message' => 'O álbum restrito não pertence ao evento restrito.',
+                    'errors' => ['restricao_album_id' => ['Este álbum não pertence ao evento selecionado — o cupom nunca poderia ser usado.']],
+                ], 422);
+            }
         }
 
         $data['codigo'] = strtoupper($data['codigo']);

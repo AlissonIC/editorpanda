@@ -56,53 +56,92 @@
             </div>
 
             {{-- ===== WhatsApp (Evolution API) ===== --}}
-            <div class="panda-card mb-4">
+            @php $evoCredsOk = (bool) ($evolutionUrl && $evolutionApiKey); @endphp
+            <div class="panda-card mb-4" id="evo-card" data-creds-ok="{{ $evoCredsOk ? 1 : 0 }}">
                 <div class="d-flex justify-content-between align-items-start mb-1">
                     <h5 class="fw-bold mb-0">
                         <i class="bi bi-whatsapp text-success me-1"></i>WhatsApp
                     </h5>
-                    <span class="badge {{ \App\Models\Configuracao::evolutionConfigurado() ? 'bg-success-subtle text-success-emphasis' : 'bg-secondary-subtle text-secondary-emphasis' }}">
+                    <span class="badge {{ \App\Models\Configuracao::evolutionConfigurado() ? 'bg-success-subtle text-success-emphasis' : 'bg-secondary-subtle text-secondary-emphasis' }}" id="evo-badge">
                         {{ \App\Models\Configuracao::evolutionConfigurado() ? 'Configurado' : 'Não configurado' }}
                     </span>
                 </div>
                 <p class="text-muted small mb-3">
-                    Integração com Evolution API para disparo de notificações via WhatsApp (compra confirmada, link de acesso, etc.).
+                    Notificações via WhatsApp (compra confirmada, link de acesso, etc.) usando a Evolution API.
+                    Conecte o servidor, crie a instância e escaneie o QR code — tudo aqui, sem abrir o manager.
                 </p>
 
-                <div class="mb-3">
-                    <label class="form-label small">URL do Evolution</label>
-                    <input type="url" name="evolution_url" class="form-control"
-                           value="{{ $evolutionUrl }}"
-                           placeholder="https://ev.editorpanda.com">
-                    <small class="text-muted">Sem barra no final.</small>
+                {{-- Passo 1: credenciais de acesso ao servidor Evolution --}}
+                {{-- Inputs SEM name de propósito: não entram no submit do form principal. --}}
+                <div id="evo-credenciais" style="{{ $evoCredsOk ? 'display:none;' : '' }}">
+                    <div class="mb-3">
+                        <label class="form-label small">URL do Evolution</label>
+                        <input type="url" id="evo-url" class="form-control"
+                               value="{{ $evolutionUrl }}"
+                               placeholder="https://ev.seudominio.com">
+                        <small class="text-muted">Endereço do servidor Evolution, sem barra no final.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small">API Key (Global)</label>
+                        <div class="input-group">
+                            <input type="password" id="evo-api-key" class="form-control font-monospace"
+                                   value="{{ $evolutionApiKey }}"
+                                   placeholder="Cole a API key global do Evolution"
+                                   autocomplete="off">
+                            <button type="button" class="btn btn-outline-secondary" id="evo-key-toggle" title="Mostrar/ocultar">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        <small class="text-muted">É a <code>AUTHENTICATION_API_KEY</code> configurada no servidor do Evolution.</small>
+                    </div>
+
+                    <div id="evo-cred-result"></div>
+                    <button type="button" class="btn btn-success" id="evo-conectar">
+                        <i class="bi bi-plug me-1"></i>Conectar ao Evolution
+                    </button>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label small">API Key (Global)</label>
-                    <div class="input-group">
-                        <input type="password" name="evolution_api_key" class="form-control font-monospace"
-                               value="{{ $evolutionApiKey }}"
-                               placeholder="Cole a API key do Evolution"
-                               autocomplete="off"
-                               id="evo-api-key">
-                        <button type="button" class="btn btn-outline-secondary" id="evo-key-toggle" title="Mostrar/ocultar">
-                            <i class="bi bi-eye"></i>
+                {{-- Passo 2: gestão de instâncias (renderizado via JS) --}}
+                <div id="evo-painel" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center border rounded p-2 px-3 mb-3">
+                        <div class="small">
+                            <i class="bi bi-check-circle-fill text-success me-1"></i>
+                            Conectado a <strong id="evo-url-label" class="font-monospace">{{ $evolutionUrl }}</strong>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-link text-decoration-none" id="evo-trocar-creds">
+                            Trocar credenciais
+                        </button>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0">Instâncias</h6>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="evo-refresh" title="Atualizar lista">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                    <div id="evo-instancias" class="mb-3">
+                        <div class="text-muted small py-2"><span class="spinner-border spinner-border-sm me-1"></span>Carregando…</div>
+                    </div>
+
+                    <div class="border-top pt-3">
+                        <label class="form-label small">Nova instância</label>
+                        <div class="input-group" style="max-width:430px;">
+                            <input type="text" id="evo-nova-nome" class="form-control"
+                                   placeholder="ex.: editorpanda" pattern="[a-zA-Z0-9_-]+" maxlength="100">
+                            <button type="button" class="btn btn-dark-panda" id="evo-criar">
+                                <i class="bi bi-plus-lg me-1"></i>Criar e conectar
+                            </button>
+                        </div>
+                        <small class="text-muted">Só letras, números, hífen e underline. O QR code abre na tela logo em seguida.</small>
+                    </div>
+
+                    <div class="border-top pt-3 mt-3">
+                        <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#modal-test-wa">
+                            <i class="bi bi-send me-1"></i>Testar envio
                         </button>
                     </div>
                 </div>
-
-                <div class="mb-3">
-                    <label class="form-label small">Nome da instância</label>
-                    <input type="text" name="evolution_instance" class="form-control"
-                           value="{{ $evolutionInstance }}"
-                           placeholder="editorpanda"
-                           pattern="[a-zA-Z0-9_-]+">
-                    <small class="text-muted">Precisa existir no manager do Evolution e estar conectada ao WhatsApp (QR code escaneado).</small>
-                </div>
-
-                <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#modal-test-wa">
-                    <i class="bi bi-send me-1"></i>Testar envio
-                </button>
             </div>
 
             {{-- ===== E-mail ===== --}}
@@ -159,7 +198,7 @@
                 <h6 class="fw-bold mb-2">Como funciona</h6>
                 <ul class="small text-muted ps-3 mb-0">
                     <li><strong>Storage</strong>: alteração vale apenas para novos uploads.</li>
-                    <li><strong>WhatsApp</strong>: precisa criar a instância no <em>manager</em> do Evolution e escanear QR antes de testar aqui.</li>
+                    <li><strong>WhatsApp</strong>: informe URL + API key do Evolution, crie a instância e escaneie o QR — tudo nesta tela. A instância marcada como "Em uso" é a que envia as notificações.</li>
                     <li><strong>E-mail</strong>: só o remetente é editável — SMTP fica no .env.</li>
                 </ul>
             </div>
@@ -207,6 +246,37 @@
                 <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-success" id="btn-wa-test">
                     <i class="bi bi-send me-1"></i>Enviar teste
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- ===== Modal: QR code de conexão da instância ===== --}}
+<div class="modal fade" id="modal-evo-qr" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-qr-code-scan me-1"></i>Conectar <span id="evo-qr-nome" class="font-monospace"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <p class="small text-muted mb-3">
+                    No celular, abra o WhatsApp → <strong>Configurações → Dispositivos conectados →
+                    Conectar dispositivo</strong> e aponte a câmera para o código abaixo.
+                </p>
+                <div id="evo-qr-box" class="d-flex align-items-center justify-content-center mx-auto mb-2 border rounded"
+                     style="width:264px;height:264px;">
+                    <span class="spinner-border text-success"></span>
+                </div>
+                <div id="evo-qr-status" class="small text-muted">Gerando QR code…</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link" data-bs-dismiss="modal">Fechar</button>
+                <button type="button" class="btn btn-outline-success" id="evo-qr-refresh">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Gerar novo QR
                 </button>
             </div>
         </div>

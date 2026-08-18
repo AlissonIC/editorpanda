@@ -311,6 +311,29 @@ Route::middleware(['auth', 'aprovado'])->prefix('painel')->name('painel.')->grou
             ->middleware('throttle:20,1')
             ->name('configuracoes.testar-email');
 
+        // Evolution: credenciais + gestão de instâncias direto do painel
+        Route::post('configuracoes/evolution/conectar', [Admin\ConfiguracoesController::class, 'evolutionConectar'])
+            ->name('configuracoes.evolution.conectar');
+        Route::get('configuracoes/evolution/instancias', [Admin\ConfiguracoesController::class, 'evolutionInstancias'])
+            ->name('configuracoes.evolution.instancias');
+        Route::post('configuracoes/evolution/instancias', [Admin\ConfiguracoesController::class, 'evolutionCriarInstancia'])
+            ->name('configuracoes.evolution.instancias.criar');
+        Route::get('configuracoes/evolution/instancias/{nome}/qrcode', [Admin\ConfiguracoesController::class, 'evolutionQrcode'])
+            ->where('nome', '[a-zA-Z0-9_-]{1,100}')
+            ->name('configuracoes.evolution.instancias.qrcode');
+        Route::get('configuracoes/evolution/instancias/{nome}/status', [Admin\ConfiguracoesController::class, 'evolutionStatus'])
+            ->where('nome', '[a-zA-Z0-9_-]{1,100}')
+            ->name('configuracoes.evolution.instancias.status');
+        Route::post('configuracoes/evolution/instancias/{nome}/usar', [Admin\ConfiguracoesController::class, 'evolutionUsar'])
+            ->where('nome', '[a-zA-Z0-9_-]{1,100}')
+            ->name('configuracoes.evolution.instancias.usar');
+        Route::post('configuracoes/evolution/instancias/{nome}/desconectar', [Admin\ConfiguracoesController::class, 'evolutionDesconectar'])
+            ->where('nome', '[a-zA-Z0-9_-]{1,100}')
+            ->name('configuracoes.evolution.instancias.desconectar');
+        Route::delete('configuracoes/evolution/instancias/{nome}', [Admin\ConfiguracoesController::class, 'evolutionExcluirInstancia'])
+            ->where('nome', '[a-zA-Z0-9_-]{1,100}')
+            ->name('configuracoes.evolution.instancias.excluir');
+
         Route::get('planos', [Admin\PlanosController::class, 'index'])->name('planos.index');
         Route::get('planos/data', [Admin\PlanosController::class, 'data'])->name('planos.data');
         Route::post('planos', [Admin\PlanosController::class, 'store'])->name('planos.store');

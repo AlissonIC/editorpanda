@@ -48,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         { value: 'pago', label: 'Pago' },
                         { value: 'pendente', label: 'Pendente' },
                         { value: 'cancelado', label: 'Cancelado' },
-                        { value: 'falhou', label: 'Falhou' },
                     ],
                 },
             ],
@@ -78,8 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     options: [
                         { value: '', label: 'Todos' },
                         { value: 'solicitado', label: 'Solicitado' },
-                        { value: 'processando', label: 'Processando' },
-                        { value: 'concluido', label: 'Concluído' },
+                        { value: 'pago', label: 'Pago' },
                         { value: 'recusado', label: 'Recusado' },
                     ],
                 },

@@ -209,8 +209,11 @@ class CheckoutController extends Controller
                 'gateway_id' => $ehGratis ? 'gratis' : null, // marca origem gratuita p/ relatórios
             ]);
 
-            // Incrementa uso do cupom (dentro da mesma transaction + lockForUpdate acima)
-            if ($cupom) {
+            // Uso do cupom: fluxo grátis nasce pago, então consome aqui (mesma
+            // transaction + lockForUpdate acima). Fluxo pago só consome quando o
+            // pagamento confirmar (PedidoPagamentoService::marcarComoPago) —
+            // senão checkout abandonado esgotaria o limite sem gerar venda.
+            if ($cupom && $ehGratis) {
                 $cupom->increment('usos_atuais');
             }
 

@@ -47,6 +47,13 @@ class PedidoPagamentoService
                 'gateway_metadata' => $rawMp ?: null,
             ], fn ($v) => $v !== null));
 
+            // Uso do cupom é consumido só na confirmação (na criação do pedido
+            // pago ele NÃO é incrementado — checkout abandonado não pode esgotar
+            // o limite). O check de status acima garante idempotência.
+            if ($lock->cupom_id) {
+                \App\Models\Cupom::whereKey($lock->cupom_id)->increment('usos_atuais');
+            }
+
             // Credita saldo do vendedor descontando taxa do plano.
             $vendedor = User::whereKey($lock->user_id)->lockForUpdate()->with('plano')->first();
             $taxa = (float) ($vendedor?->plano?->taxa_por_venda ?? 0);

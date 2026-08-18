@@ -80,9 +80,11 @@ document.addEventListener('DOMContentLoaded', () => {
         form.querySelectorAll('input[data-mask="money"][name]').forEach((el) => {
             data[el.name] = el.dataset.rawValue ?? '';
         });
-        if (Array.isArray(data.descontos_quantidade)) {
-            data.descontos_quantidade = data.descontos_quantidade.filter(Boolean);
-        }
+        // Sempre envia o array — com a chave ausente do PUT o backend não toca
+        // na coluna, e remover todos os degraus não persistiria.
+        data.descontos_quantidade = Array.isArray(data.descontos_quantidade)
+            ? data.descontos_quantidade.filter(Boolean)
+            : [];
 
         statusEl.textContent = 'Salvando…';
         statusEl.className = 'text-center small text-muted mt-2';

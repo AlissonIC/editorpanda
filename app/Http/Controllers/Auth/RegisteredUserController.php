@@ -21,6 +21,10 @@ class RegisteredUserController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        // Normaliza em vez de rejeitar — "Foo@Gmail.com" deve virar minúsculo,
+        // não estourar a regra `lowercase` na cara do usuário.
+        $request->merge(['email' => mb_strtolower(trim((string) $request->input('email')))]);
+
         $request->validate([
             'nome' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],

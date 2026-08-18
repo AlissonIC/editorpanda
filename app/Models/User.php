@@ -25,6 +25,9 @@ class User extends Authenticatable
         'nome',
         'email',
         'whatsapp',
+        // CPF preenchido no checkout de assinatura — sem ele no fillable o
+        // fill() descarta em silêncio e o PIX sai sem payer.identification.
+        'cpf',
         'foto_perfil',
         'password',
         'role',

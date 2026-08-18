@@ -17,9 +17,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const tipoSelect = document.getElementById('cupom-tipo');
     const valorUnit = document.getElementById('cupom-valor-unit');
 
-    tipoSelect.addEventListener('change', () => {
+    // Percentual é limitado a 100%; fixo vai até 9999.99 (espelha o backend)
+    function syncValorLimite() {
         valorUnit.textContent = tipoSelect.value === 'percentual' ? '(%)' : '(R$)';
-    });
+        form.valor.max = tipoSelect.value === 'percentual' ? '100' : '9999.99';
+    }
+    tipoSelect.addEventListener('change', syncValorLimite);
 
     function statusBadge(ativo) {
         return ativo
@@ -76,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
         form.querySelectorAll('.invalid-feedback[data-field]').forEach((el) => el.textContent = '');
         document.getElementById('cupom-ativo').checked = true;
         tipoSelect.value = 'percentual';
-        valorUnit.textContent = '(%)';
+        syncValorLimite();
     }
 
     btnNovo.addEventListener('click', () => {
@@ -105,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 form.limite_usos.value = c.limite_usos || '';
                 form.expira_em.value = c.expira_em ? c.expira_em.slice(0, 16) : '';
                 document.getElementById('cupom-ativo').checked = !!c.ativo;
-                valorUnit.textContent = c.tipo === 'percentual' ? '(%)' : '(R$)';
+                syncValorLimite();
                 form.emails_raw.value = (data.emails || []).join('\n');
                 modal.show();
             } catch { window.showToast('Erro ao carregar cupom.', 'error'); }

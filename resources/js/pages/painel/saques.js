@@ -100,14 +100,18 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             if (err.response?.status === 422) {
                 const errors = err.response.data.errors || {};
+                let exibidos = 0;
                 Object.entries(errors).forEach(([field, msgs]) => {
-                    const input = form.querySelector(`[name="${field}"]`);
+                    // Laravel devolve "dados_bancarios.chave"; o input se chama "dados_bancarios[chave]"
+                    const nameAttr = field.replace(/\.([^.]+)/g, '[$1]');
+                    const input = form.querySelector(`[name="${nameAttr}"]`);
                     const fb = form.querySelector(`[data-field="${field}"]`);
                     if (input) input.classList.add('is-invalid');
-                    if (fb) fb.textContent = msgs[0];
+                    if (fb) { fb.textContent = msgs[0]; exibidos++; }
                 });
-                if (!Object.keys(errors).length) {
-                    window.showToast(err.response.data.message || 'Erro.', 'error');
+                if (!exibidos) {
+                    const primeiro = Object.values(errors)[0]?.[0];
+                    window.showToast(primeiro || err.response.data.message || 'Erro.', 'error');
                 }
             } else {
                 window.showToast('Erro ao solicitar saque.', 'error');

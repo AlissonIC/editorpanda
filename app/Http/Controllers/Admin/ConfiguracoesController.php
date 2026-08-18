@@ -38,24 +38,136 @@ class ConfiguracoesController extends Controller
 
     public function update(Request $request): JsonResponse
     {
+        // Evolution (URL/key/instância) NÃO passa por aqui — tem fluxo próprio
+        // (evolutionConectar & cia.); incluir no form principal apagaria as
+        // credenciais a cada "Salvar configurações".
         $data = $request->validate([
             'storage_disk' => ['required', 'in:local,s3'],
-            'evolution_url' => ['nullable', 'url', 'max:255'],
-            'evolution_api_key' => ['nullable', 'string', 'max:255'],
-            'evolution_instance' => ['nullable', 'string', 'max:100', 'regex:/^[a-zA-Z0-9_-]+$/'],
             'email_from_address' => ['nullable', 'email', 'max:180'],
             'email_from_name' => ['nullable', 'string', 'max:120'],
         ]);
 
         Configuracao::set(Configuracao::CHAVE_STORAGE_DISK, $data['storage_disk']);
         // Nulos passam string vazia — trim + null pra manter DB limpo
-        Configuracao::set(Configuracao::CHAVE_EVOLUTION_URL, trim($data['evolution_url'] ?? '') ?: null);
-        Configuracao::set(Configuracao::CHAVE_EVOLUTION_API_KEY, trim($data['evolution_api_key'] ?? '') ?: null);
-        Configuracao::set(Configuracao::CHAVE_EVOLUTION_INSTANCE, trim($data['evolution_instance'] ?? '') ?: null);
         Configuracao::set(Configuracao::CHAVE_EMAIL_FROM_ADDRESS, trim($data['email_from_address'] ?? '') ?: null);
         Configuracao::set(Configuracao::CHAVE_EMAIL_FROM_NAME, trim($data['email_from_name'] ?? '') ?: null);
 
         return response()->json(['message' => 'Configurações salvas.']);
+    }
+
+    // ==================== Evolution: credenciais & instâncias ====================
+
+    /**
+     * Passo 1 do fluxo: valida URL + API key contra o servidor ANTES de salvar.
+     * Só persiste se o Evolution aceitar — assim a UI nunca fica "configurada"
+     * com credencial quebrada.
+     */
+    public function evolutionConectar(Request $request, EvolutionService $evolution): JsonResponse
+    {
+        $data = $request->validate([
+            'evolution_url' => ['required', 'url', 'max:255'],
+            'evolution_api_key' => ['required', 'string', 'max:255'],
+        ]);
+
+        $url = rtrim(trim($data['evolution_url']), '/');
+        $apiKey = trim($data['evolution_api_key']);
+
+        $resultado = $evolution->listarInstancias($url, $apiKey);
+        if (! $resultado['ok']) {
+            return response()->json(['message' => $resultado['message']], 422);
+        }
+
+        Configuracao::set(Configuracao::CHAVE_EVOLUTION_URL, $url);
+        Configuracao::set(Configuracao::CHAVE_EVOLUTION_API_KEY, $apiKey);
+
+        return response()->json([
+            'message' => 'Conectado ao Evolution.',
+            'instancias' => $resultado['instancias'],
+            'ativa' => Configuracao::evolutionInstance(),
+        ]);
+    }
+
+    public function evolutionInstancias(EvolutionService $evolution): JsonResponse
+    {
+        $resultado = $evolution->listarInstancias();
+        if (! $resultado['ok']) {
+            return response()->json(['message' => $resultado['message']], 422);
+        }
+
+        return response()->json([
+            'instancias' => $resultado['instancias'],
+            'ativa' => Configuracao::evolutionInstance(),
+        ]);
+    }
+
+    public function evolutionCriarInstancia(Request $request, EvolutionService $evolution): JsonResponse
+    {
+        $data = $request->validate([
+            'nome' => ['required', 'string', 'max:100', 'regex:/^[a-zA-Z0-9_-]+$/'],
+        ], [], ['nome' => 'nome da instância']);
+
+        $resultado = $evolution->criarInstancia($data['nome']);
+        if (! $resultado['ok']) {
+            return response()->json(['message' => $resultado['message']], 422);
+        }
+
+        // Primeira instância vira a ativa automaticamente — um clique a menos.
+        if (! Configuracao::evolutionInstance()) {
+            Configuracao::set(Configuracao::CHAVE_EVOLUTION_INSTANCE, $data['nome']);
+        }
+
+        return response()->json(['message' => $resultado['message'], 'nome' => $data['nome']], 201);
+    }
+
+    public function evolutionQrcode(string $nome, EvolutionService $evolution): JsonResponse
+    {
+        $resultado = $evolution->conectarInstancia($nome);
+        return response()->json($resultado, $resultado['ok'] ? 200 : 422);
+    }
+
+    public function evolutionStatus(string $nome, EvolutionService $evolution): JsonResponse
+    {
+        $resultado = $evolution->statusInstancia($nome);
+        if (! $resultado['ok']) {
+            return response()->json(['message' => $resultado['message']], 422);
+        }
+
+        // Conectou e nenhuma instância está em uso → assume esta.
+        if ($resultado['state'] === 'open' && ! Configuracao::evolutionInstance()) {
+            Configuracao::set(Configuracao::CHAVE_EVOLUTION_INSTANCE, $nome);
+        }
+
+        return response()->json(['state' => $resultado['state'], 'ativa' => Configuracao::evolutionInstance()]);
+    }
+
+    /** Define qual instância o sistema usa pra disparar as notificações. */
+    public function evolutionUsar(string $nome): JsonResponse
+    {
+        abort_unless(preg_match('/^[a-zA-Z0-9_-]{1,100}$/', $nome), 422, 'Nome inválido.');
+        Configuracao::set(Configuracao::CHAVE_EVOLUTION_INSTANCE, $nome);
+
+        return response()->json(['message' => "Instância '{$nome}' definida como padrão de envio."]);
+    }
+
+    public function evolutionDesconectar(string $nome, EvolutionService $evolution): JsonResponse
+    {
+        $resultado = $evolution->desconectarInstancia($nome);
+        return response()->json(['message' => $resultado['message']], $resultado['ok'] ? 200 : 422);
+    }
+
+    public function evolutionExcluirInstancia(string $nome, EvolutionService $evolution): JsonResponse
+    {
+        $resultado = $evolution->excluirInstancia($nome);
+        if (! $resultado['ok']) {
+            return response()->json(['message' => $resultado['message']], 422);
+        }
+
+        // Excluiu a instância em uso → limpa a config pra UI pedir outra.
+        if (Configuracao::evolutionInstance() === $nome) {
+            Configuracao::set(Configuracao::CHAVE_EVOLUTION_INSTANCE, null);
+        }
+
+        return response()->json(['message' => $resultado['message']]);
     }
 
     /**

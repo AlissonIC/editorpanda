@@ -130,20 +130,20 @@
                         <div class="row g-3">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label small">Posição do logo</label>
-                                <div class="pos-grid" data-field-target="logo_posicao">
+                                <div class="pos-grid" data-field-target="watermark_posicao">
                                     <button type="button" class="pos-cell" data-value="top-left" title="Superior esquerdo"></button>
                                     <button type="button" class="pos-cell" data-value="top-right" title="Superior direito"></button>
                                     <button type="button" class="pos-cell" data-value="center" title="Centro"></button>
                                     <button type="button" class="pos-cell" data-value="bottom-left" title="Inferior esquerdo"></button>
                                     <button type="button" class="pos-cell" data-value="bottom-right" title="Inferior direito"></button>
                                 </div>
-                                <input type="hidden" name="logo_posicao" value="top-right">
+                                <input type="hidden" name="watermark_posicao" value="top-right">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label small">
                                     Escala do logo (<span id="ev-scale-val">15</span>% da largura)
                                 </label>
-                                <input type="range" name="logo_escala" min="0.05" max="0.5" step="0.01"
+                                <input type="range" name="watermark_escala" min="0.05" max="0.5" step="0.01"
                                        value="0.15" class="form-range" id="ev-scale-range">
                             </div>
                         </div>

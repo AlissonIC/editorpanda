@@ -29,6 +29,12 @@ export function bindCrudModal(opts) {
         form.reset();
         const idInput = form.querySelector('input[name="id"]');
         if (idInput) idInput.value = '';
+        // form.reset() restaura o value mas NÃO limpa dataset.rawValue das
+        // máscaras — sem o resync, "Novo" depois de um edit/cancel enviaria
+        // o valor anterior mesmo com o campo aparentando estar zerado.
+        form.querySelectorAll('input[data-mask="money"]').forEach((el) => {
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        });
         clearErrors();
     }
 

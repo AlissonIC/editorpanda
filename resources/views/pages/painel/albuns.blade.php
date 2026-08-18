@@ -70,6 +70,29 @@
                     <label class="form-label small">Descrição</label>
                     <textarea name="descricao" class="form-control" rows="2"></textarea>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label small d-block">Tipo do álbum</label>
+                    <div class="pv-metodo-tiles" style="max-width:360px;">
+                        <label class="pv-metodo-tile">
+                            <input type="radio" name="tipo" value="video" checked>
+                            <span class="pv-metodo-tile-body">
+                                <i class="bi bi-film"></i>
+                                <span class="pv-metodo-title">Vídeos</span>
+                                <span class="pv-metodo-sub">MP4, MOV, MKV, WEBM</span>
+                            </span>
+                        </label>
+                        <label class="pv-metodo-tile">
+                            <input type="radio" name="tipo" value="imagem">
+                            <span class="pv-metodo-tile-body">
+                                <i class="bi bi-image"></i>
+                                <span class="pv-metodo-title">Fotos</span>
+                                <span class="pv-metodo-sub">JPG, PNG, WEBP, HEIC</span>
+                            </span>
+                        </label>
+                    </div>
+                    <small class="text-muted">Não pode mudar depois de ter itens enviados.</small>
+                    <div class="invalid-feedback d-block" data-field="tipo"></div>
+                </div>
                 <div class="row g-3">
                     <div class="col-md-4 mb-3">
                         <label class="form-label small">Preço fixo do álbum</label>

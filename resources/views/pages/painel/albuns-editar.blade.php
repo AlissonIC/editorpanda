@@ -64,6 +64,10 @@
                 </div>
 
                 @php $temItens = $album->videos()->exists(); @endphp
+                @if($temItens)
+                    {{-- Radios disabled ficam fora do FormData — o hidden garante que o PUT leve o tipo atual. --}}
+                    <input type="hidden" name="tipo" value="{{ $album->tipo }}">
+                @endif
                 <div class="mb-3">
                     <label class="form-label small d-block">Tipo do álbum</label>
                     <div class="pv-metodo-tiles" style="max-width:360px;">
